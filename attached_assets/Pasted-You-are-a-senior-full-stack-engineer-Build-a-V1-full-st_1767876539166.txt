@@ -1,0 +1,208 @@
+You are a senior full-stack engineer. Build a V1 full-stack web app in Replit called **“LVC Customer Service Portal (V1)”**.
+
+Primary goal
+
+* A customer-facing portal where customers can log in and track their **jobs** and **repair quotations** (and optionally **purchase orders/parts status** if present in the dataset).
+* This V1 must ingest data via **CSV and/or Excel (XLSX)** uploads (snapshot-based, not live). The UI must clearly show “Data current as of: <last import timestamp>”.
+
+Tech stack (choose a stable Replit-friendly approach)
+
+* Use **Next.js (TypeScript)** for full stack (pages/app router OK).
+* Use **SQLite** for persistence (via Prisma OR a lightweight SQLite library). Data must persist across sessions.
+* Use **Tailwind CSS** for UI styling.
+* CSV parsing: `papaparse` (or equivalent). Excel parsing: `xlsx`.
+
+User roles
+
+1. **Admin (internal)**
+
+   * Can upload/import datasets.
+   * Can create/manage customer accounts (account_code + password).
+2. **Customer**
+
+   * Logs in and sees only their own records (segmented by account_code).
+
+Authentication (V1)
+
+* Implement simple login with session cookie.
+* Admin access protected by `ADMIN_PASSWORD` env var.
+* Customer passwords stored **hashed** (bcrypt).
+* No external auth providers in V1.
+
+Data ingestion (V1 snapshot imports)
+
+* Provide an **Admin → Imports** page:
+
+  * Upload **Jobs CSV/XLSX**
+  * Upload **Quotes CSV/XLSX**
+  * (Optional) Upload **PO/Parts CSV/XLSX** if available
+* Each import creates an **ImportBatch** record with:
+
+  * batch_id, imported_at, imported_by, file names, row counts, errors/warnings
+* Validate columns strictly:
+
+  * If required columns are missing, show a clear error report.
+  * If rows fail validation, skip them and list them in an “Import Errors” table.
+
+Required data schemas (design the DB + expected columns)
+A) CustomerAccount
+
+* account_code (unique)
+* account_name
+* password_hash
+* created_at
+
+B) Job
+Required columns in Jobs file:
+
+* job_id (string/number, unique within account_code)
+* account_code
+* site_name
+* status
+* created_date (date)
+* last_updated_date (date)
+* short_description (text)
+  Optional columns:
+* engineer_name
+* last_visit_date
+* next_action_due_date
+* priority (e.g., Gold/Standard or numeric)
+* job_value_estimate (number)
+
+C) Quote
+Required columns in Quotes file:
+
+* quote_id (unique within account_code)
+* job_id (must link to Job where possible)
+* account_code
+* quote_status (e.g., awaiting_approval/approved/rejected)
+* net_total
+* vat_total
+* gross_total
+* quote_date
+  Optional columns:
+* lead_time_text
+* pdf_url (if you have it) OR store a “quote_text_summary”
+* top_lines_summary (text)
+
+D) Optional: PurchaseOrder / PartsStatus (only if dataset provided)
+
+* po_id
+* account_code
+* job_id
+* supplier_name
+* po_status
+* outstanding_lines_count
+* eta_date (optional)
+* last_chased_date (optional)
+
+Portal UI (Customer)
+
+1. Login page
+
+* account_code + password
+
+2. Dashboard
+
+* Tiles with counts:
+
+  * Open Jobs
+  * Awaiting Approval
+  * Awaiting Parts (if PO/parts data exists)
+  * Closed/Completed (last 30/90 days)
+* Table of jobs with filters:
+
+  * status, site_name, age (days open), priority
+* Search bar (job_id / site / description)
+
+3. Jobs list + job detail
+
+* Jobs list: paginated, filterable.
+* Job detail page must show:
+
+  * Key info (status, site, created, last updated, description)
+  * “Timeline” (derived from status mapping; keep simple)
+  * Linked quote(s) (if present)
+  * Linked PO/parts (if present)
+  * “Data current as of …”
+
+4. Quote detail + digital approval capture (high priority feature)
+
+* For quotes in “awaiting approval”, show:
+
+  * totals, lead time text, summary
+  * CTA: **Approve Quote**
+* Approval form captures:
+
+  * approver_name
+  * approver_email
+  * customer_po_number (optional but present)
+  * checkbox: “I confirm approval and accept the terms”
+* On submit:
+
+  * Create an **ApprovalEvent** record (quote_id, job_id, account_code, captured_at, captured_by fields, payload)
+  * Update quote_status in the portal DB to “approved_pending_internal_processing” (or similar)
+  * Display confirmation message: “Approval recorded. Our team will process this shortly.”
+* Provide an **audit trail** visible to customer on the quote page (“Approved by X on date/time”).
+
+Portal UI (Admin)
+
+1. Admin login (password via env var)
+2. Imports page
+
+* Upload Jobs / Quotes / optional PO datasets
+* Show last import timestamp and batch history
+* Show import errors/warnings
+
+3. Accounts page
+
+* Create customer account (account_code, account_name, set/reset password)
+
+4. Approvals page
+
+* List recent approvals (searchable by account_code, quote_id, job_id)
+* Export approvals CSV
+
+Status mapping (must implement)
+
+* Maintain a simple mapping table in code:
+
+  * Protean/raw status → customer-friendly label → lane
+    Lanes (minimum):
+* Awaiting Approval
+* Awaiting Parts
+* In Progress
+* Completed/Closed
+* On Hold / Delayed
+  If raw statuses are unknown, default to “In Progress” but keep raw status visible.
+
+Security and segmentation (non-negotiable)
+
+* Every customer query must be filtered by session account_code.
+* No customer can access another account’s records even by guessing IDs.
+* Admin endpoints locked down.
+
+Usability and polish
+
+* Clean, fast UI; no clutter.
+* Always show “Data current as of …”
+* Provide **Download CSV templates** for Jobs and Quotes from the Admin page.
+* Seed sample data and a sample CSV in the repo so the app can be demoed immediately without Protean exports.
+
+Deliverables
+
+* Working app with:
+
+  * customer login + dashboard + job/quote pages
+  * admin import + account management
+  * quote approval capture + approvals list
+* README with:
+
+  * env vars required (ADMIN_PASSWORD, SESSION_SECRET, etc.)
+  * how to import CSV/XLSX
+  * expected columns and sample files
+
+Implementation guidance
+
+* Keep V1 scope tight; no external integrations (WhatsApp/email sending) yet.
+* Design code cleanly so future V2 can swap snapshot imports for live Protean sync + controlled write-back.

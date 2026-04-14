@@ -1,0 +1,11 @@
+﻿JobID,Customer Alpha Code,Customer Name,Site Alpha,Site Name,PostCode,Job Type,SessionID,VisitDate,Status,Employee,Due,PartsValue,MiscValue,LabourValue,JobValue
+56660,RIDG002,Ridge Crest Cleaning LTD,RIDG00202,Ridge Crest Cleaning LTD / Elmgreen School,SE27 9BZ,Callback FOC,1,17/12/2025,Attended - In Processing,Peter Hunte,08/12/2025,0,0,0,0
+57009,RIDG002,Ridge Crest Cleaning LTD,RIDG002105,Ridge Crest Cleaning LTD / St Richard Reynolds Catholic College,TW1 4LT,Breakdown B Rate,1,15/12/2025,Pending Engineer Visit,Peter Hunte,12/12/2025,0,94,0,94
+57258,RIDG002,Ridge Crest Cleaning LTD,RIDG00214,Ridge Crest Cleaning Ltd / Edgbarrow School,RG45 7HZ,Breakdown B Rate,1,08/01/2026,Attended,Steve Batt,07/01/2026,0,94,117.5,211.5
+56480,RIDG002,Ridge Crest Cleaning LTD,RIDG00224,Ridge Crest Cleaning LTD / Metropolitan Academy,BS16 2HD,Callback,1,16/12/2025,Pending Engineer Visit,Shane Wingfield,12/01/2026,704.46,0,188,892.46
+56480,RIDG002,Ridge Crest Cleaning LTD,RIDG00224,Ridge Crest Cleaning LTD / Metropolitan Academy,BS16 2HD,Callback,2,12/01/2026,Pending Engineer Visit,Steve Batt,12/01/2026,704.46,0,188,892.46
+56874,RIDG002,Ridge Crest Cleaning LTD,RIDG00229,Ridge Crest Cleaning LTD / Hylands School,CM1 3ET,Workshop Collection & Repair,1,16/12/2025,Awaiting Parts for Repair,Luke Langlands,15/01/2026,149.92,0,141,290.92
+57095,RIDG002,Ridge Crest Cleaning LTD,RIDG00233,Ridge Crest Cleaning LTD / Orchard Park High School,CR0 7NJ,Workshop Repair,2,06/01/2026,Attended,Luke Langlands,,50.97,0,141,191.97
+57095,RIDG002,Ridge Crest Cleaning LTD,RIDG00233,Ridge Crest Cleaning LTD / Orchard Park High School,CR0 7NJ,Workshop Repair,1,17/12/2025,Attended,Luke Langlands,,50.97,0,141,191.97
+57090,RIDG002,Ridge Crest Cleaning LTD,RIDG00233,Ridge Crest Cleaning LTD / Orchard Park High School,CR0 7NJ,Workshop Repair,1,17/12/2025,Awaiting Parts for Repair,Luke Langlands,28/01/2026,189.44,0,188,377.44
+57389,RIDG002,Ridge Crest Cleaning LTD,RIDG00251,Ridge Crest Cleaning LTD/Portslade Aldridge Community Academy (PACA),BN41 2WS,Breakdown B Rate,1,13/01/2026,Pending Engineer Visit,Peter Hunte,,0,94,0,94

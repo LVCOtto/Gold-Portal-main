@@ -1,0 +1,133 @@
+{
+  "colorScheme": "light",
+  "fonts": [
+    {
+      "family": "sans-serif",
+      "count": 169
+    },
+    {
+      "family": "Roboto",
+      "count": 125
+    },
+    {
+      "family": "-apple-system",
+      "count": 123
+    },
+    {
+      "family": "BlinkMacSystemFont",
+      "count": 123
+    },
+    {
+      "family": "Segoe UI",
+      "count": 123
+    },
+    {
+      "family": "Helvetica Neue",
+      "count": 123
+    },
+    {
+      "family": "Arial",
+      "count": 123
+    },
+    {
+      "family": "Noto Sans",
+      "count": 123
+    },
+    {
+      "family": "Apple Color Emoji",
+      "count": 123
+    },
+    {
+      "family": "Segoe UI Emoji",
+      "count": 123
+    }
+  ],
+  "colors": {
+    "primary": "#1863DC",
+    "accent": "#E30613",
+    "background": "#FFFFFF",
+    "textPrimary": "#E30613",
+    "link": "#E30613"
+  },
+  "typography": {
+    "fontFamilies": {
+      "primary": "-apple-system",
+      "heading": "Roboto Condensed"
+    },
+    "fontStacks": {
+      "body": [
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Segoe UI",
+        "Roboto",
+        "Helvetica Neue",
+        "Arial",
+        "Noto Sans",
+        "sans-serif",
+        "Apple Color Emoji",
+        "Segoe UI Emoji",
+        "Segoe UI Symbol",
+        "Noto Color Emoji"
+      ],
+      "heading": [
+        "Roboto Condensed",
+        "sans-serif"
+      ],
+      "paragraph": [
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Segoe UI",
+        "Roboto",
+        "Helvetica Neue",
+        "Arial",
+        "Noto Sans",
+        "sans-serif",
+        "Apple Color Emoji",
+        "Segoe UI Emoji",
+        "Segoe UI Symbol",
+        "Noto Color Emoji"
+      ]
+    },
+    "fontSizes": {
+      "h1": "40px",
+      "h2": "32px",
+      "body": "18px"
+    }
+  },
+  "spacing": {
+    "baseUnit": 4,
+    "borderRadius": "4px"
+  },
+  "components": {},
+  "images": {
+    "logo": "File saved at: attached_assets/logo.png",
+    "favicon": null,
+    "ogImage": "File saved at: attached_assets/ogImage.png"
+  },
+  "__framework_hints": [
+    "WordPress 6.9"
+  ],
+  "__llm_logo_reasoning": {
+    "selectedIndex": 0,
+    "reasoning": "Strong indicators: header logo linking to homepage, header location, top-left position, alt matches logo/brand, class contains logo, reasonable size, not visible (penalty). Score: 88 (clear winner by 38 points)",
+    "confidence": 0.9
+  },
+  "__llm_button_reasoning": {
+    "primary": {
+      "index": -1,
+      "text": "N/A",
+      "reasoning": "LLM failed"
+    },
+    "secondary": {
+      "index": -1,
+      "text": "N/A",
+      "reasoning": "LLM failed"
+    },
+    "confidence": 0
+  },
+  "confidence": {
+    "buttons": 0,
+    "colors": 0,
+    "overall": 0
+  }
+}
