@@ -17,6 +17,7 @@ import AdminDashboard from "@/pages/admin/index";
 import AdminAccountsPage from "@/pages/admin/accounts";
 import AdminCustomerViewPage from "@/pages/admin/customer-view";
 import AdminSettingsPage from "@/pages/admin/settings";
+import ChangePasswordPage from "@/pages/change-password";
 import { Loader2 } from "lucide-react";
 
 function LoadingScreen() {
@@ -34,7 +35,7 @@ function ProtectedRoute({
   children: React.ReactNode; 
   requiredType: "customer" | "admin";
 }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, mustChangePassword } = useAuth();
 
   if (isLoading) {
     return <LoadingScreen />;
@@ -42,6 +43,10 @@ function ProtectedRoute({
 
   if (!user) {
     return <Redirect to={requiredType === "admin" ? "/admin/login" : "/"} />;
+  }
+
+  if (mustChangePassword) {
+    return <Redirect to="/change-password" />;
   }
 
   if (user.type !== requiredType) {
@@ -81,6 +86,9 @@ function Router() {
       </Route>
 
       {/* Customer Routes */}
+      <Route path="/change-password">
+        <ChangePasswordPage />
+      </Route>
       <Route path="/dashboard">
         <ProtectedRoute requiredType="customer">
           <DashboardPage />

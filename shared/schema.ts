@@ -9,6 +9,8 @@ export const customerAccounts = pgTable("customer_accounts", {
   accountCode: text("account_code").notNull().unique(),
   accountName: text("account_name").notNull(),
   passwordHash: text("password_hash").notNull(),
+  mustChangePassword: boolean("must_change_password").notNull().default(true),
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -178,6 +180,20 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Audit Events - Append-only log of security-relevant actions
+export const auditEvents = pgTable("audit_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  actorType: text("actor_type").notNull(), // 'admin' | 'customer' | 'system'
+  actorId: text("actor_id"), // accountCode for customers, 'admin' for shared admin
+  action: text("action").notNull(), // e.g. 'login.success', 'override.upsert', 'import.replace'
+  targetType: text("target_type"),
+  targetId: text("target_id"),
+  ip: text("ip"),
+  userAgent: text("user_agent"),
+  payload: text("payload"), // JSON string
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Insert Schemas
 export const insertCustomerAccountSchema = createInsertSchema(customerAccounts).omit({
   id: true,
@@ -210,6 +226,11 @@ export const insertJobOverrideSchema = createInsertSchema(jobOverrides).omit({
   updatedAt: true,
 });
 
+export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type CustomerAccount = typeof customerAccounts.$inferSelect;
 export type InsertCustomerAccount = z.infer<typeof insertCustomerAccountSchema>;
@@ -231,6 +252,9 @@ export type InsertApprovalEvent = z.infer<typeof insertApprovalEventSchema>;
 
 export type JobOverride = typeof jobOverrides.$inferSelect;
 export type InsertJobOverride = z.infer<typeof insertJobOverrideSchema>;
+
+export type AuditEvent = typeof auditEvents.$inferSelect;
+export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
 

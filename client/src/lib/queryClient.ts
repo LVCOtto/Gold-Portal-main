@@ -12,10 +12,17 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const headers: Record<string, string> = {
+    // CSRF defense: server requires this header on mutating requests.
+    "X-Requested-By": "lvc-portal",
+    "X-Requested-With": "XMLHttpRequest",
+  };
+  if (data !== undefined) headers["Content-Type"] = "application/json";
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
-    body: data ? JSON.stringify(data) : undefined,
+    headers,
+    body: data !== undefined ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
 

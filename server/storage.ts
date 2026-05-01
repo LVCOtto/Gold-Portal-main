@@ -1,5 +1,5 @@
 import { 
-  customerAccounts, jobs, quotes, purchaseOrders, importBatches, approvalEvents, systemSettings, jobOverrides,
+  customerAccounts, jobs, quotes, purchaseOrders, importBatches, approvalEvents, systemSettings, jobOverrides, auditEvents,
   type CustomerAccount, type InsertCustomerAccount,
   type Job, type InsertJob,
   type Quote, type InsertQuote,
@@ -7,6 +7,7 @@ import {
   type ImportBatch, type InsertImportBatch,
   type ApprovalEvent, type InsertApprovalEvent,
   type JobOverride, type InsertJobOverride,
+  type AuditEvent, type InsertAuditEvent,
   type SystemSetting
 } from "@shared/schema";
 import { db } from "./db";
@@ -18,6 +19,8 @@ export interface IStorage {
   getCustomerAccountByCode(accountCode: string): Promise<CustomerAccount | undefined>;
   createCustomerAccount(account: InsertCustomerAccount): Promise<CustomerAccount>;
   updateCustomerAccountPassword(accountCode: string, passwordHash: string): Promise<void>;
+  setMustChangePassword(accountCode: string, mustChange: boolean): Promise<void>;
+  updateCustomerLastLogin(accountCode: string): Promise<void>;
   getAllCustomerAccounts(search?: string): Promise<CustomerAccount[]>;
 
   // Jobs
@@ -65,6 +68,10 @@ export interface IStorage {
   // Dashboard Stats
   getDashboardStats(accountCode: string): Promise<{ openJobs: number; awaitingApproval: number; awaitingParts: number; recentlyClosed: number }>;
   getAdminStats(): Promise<{ totalCustomers: number; totalJobs: number; totalQuotes: number; pendingApprovals: number; recentApprovals: number; lastImport: string | null }>;
+
+  // Audit
+  createAuditEvent(event: InsertAuditEvent): Promise<AuditEvent>;
+  getAuditEvents(filters: { actorType?: string; actorId?: string; action?: string; page?: number; pageSize?: number }): Promise<{ events: AuditEvent[]; total: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -85,7 +92,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateCustomerAccountPassword(accountCode: string, passwordHash: string): Promise<void> {
-    await db.update(customerAccounts).set({ passwordHash }).where(eq(customerAccounts.accountCode, accountCode));
+    await db.update(customerAccounts)
+      .set({ passwordHash })
+      .where(eq(customerAccounts.accountCode, accountCode));
+  }
+
+  async setMustChangePassword(accountCode: string, mustChange: boolean): Promise<void> {
+    await db.update(customerAccounts)
+      .set({ mustChangePassword: mustChange })
+      .where(eq(customerAccounts.accountCode, accountCode));
+  }
+
+  async updateCustomerLastLogin(accountCode: string): Promise<void> {
+    await db.update(customerAccounts)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(customerAccounts.accountCode, accountCode));
   }
 
   async getAllCustomerAccounts(search?: string): Promise<CustomerAccount[]> {
@@ -457,6 +478,29 @@ export class DatabaseStorage implements IStorage {
       recentApprovals: Number(recentApprovalsResult.count),
       lastImport,
     };
+  }
+
+  // Audit
+  async createAuditEvent(event: InsertAuditEvent): Promise<AuditEvent> {
+    const [created] = await db.insert(auditEvents).values(event).returning();
+    return created;
+  }
+
+  async getAuditEvents(filters: { actorType?: string; actorId?: string; action?: string; page?: number; pageSize?: number }): Promise<{ events: AuditEvent[]; total: number }> {
+    const page = filters.page || 1;
+    const pageSize = Math.min(filters.pageSize || 50, 200);
+    const conditions: any[] = [];
+    if (filters.actorType) conditions.push(eq(auditEvents.actorType, filters.actorType));
+    if (filters.actorId) conditions.push(eq(auditEvents.actorId, filters.actorId));
+    if (filters.action) conditions.push(ilike(auditEvents.action, `%${filters.action}%`));
+    const where = conditions.length ? and(...conditions) : undefined;
+    const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(auditEvents).where(where as any);
+    const events = await db.select().from(auditEvents)
+      .where(where as any)
+      .orderBy(desc(auditEvents.createdAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+    return { events, total: Number(count) };
   }
 }
 

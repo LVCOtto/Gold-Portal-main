@@ -11,8 +11,10 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
+  mustChangePassword: boolean;
   login: (type: "customer" | "admin", credentials: { accountCode?: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
+  clearMustChangePassword: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -20,6 +22,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const [, setLocation] = useLocation();
 
   useEffect(() => {
@@ -43,14 +46,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(type: "customer" | "admin", credentials: { accountCode?: string; password: string }) {
     const endpoint = type === "admin" ? "/api/auth/admin/login" : "/api/auth/customer/login";
     const response = await apiRequest("POST", endpoint, credentials);
-    
+
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.message || "Login failed");
     }
-    
+
     const data = await response.json();
     setUser(data.user);
+    if (data.mustChangePassword) {
+      setMustChangePassword(true);
+      setLocation("/change-password");
+      return;
+    }
+    setMustChangePassword(false);
     setLocation(type === "admin" ? "/admin" : "/dashboard");
   }
 
@@ -60,14 +69,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error("Logout error:", error);
     }
-    // Clear all cached data to prevent stale data when logging in as different user
     queryClient.clear();
     setUser(null);
+    setMustChangePassword(false);
     setLocation("/");
   }
 
+  function clearMustChangePassword() {
+    setMustChangePassword(false);
+  }
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, mustChangePassword, login, logout, clearMustChangePassword }}>
       {children}
     </AuthContext.Provider>
   );

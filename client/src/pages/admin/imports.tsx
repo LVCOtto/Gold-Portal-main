@@ -204,6 +204,9 @@ export default function AdminImportsPage() {
 
       const response = await fetch("/api/admin/imports", {
         method: "POST",
+        headers: {
+          "X-Requested-By": "lvc-portal",
+        },
         body: formData,
         credentials: "include",
       });

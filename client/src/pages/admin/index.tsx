@@ -92,6 +92,9 @@ export default function AdminDashboard() {
       
       const response = await fetch("/api/admin/import-replace", {
         method: "POST",
+        headers: {
+          "X-Requested-By": "lvc-portal",
+        },
         body: formData,
         credentials: "include",
       });

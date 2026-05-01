@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
-import MemoryStore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
 import rateLimit from "express-rate-limit";
 import bcrypt from "bcryptjs";
 import multer from "multer";
@@ -10,8 +10,11 @@ import * as XLSX from "xlsx";
 import PDFDocument from "pdfkit";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
+import { z } from "zod";
 import { parse as dateFnsParse, isValid as isValidDate } from "date-fns";
 import { storage } from "./storage";
+import { pool } from "./db";
 
 // Helper function to convert Excel serial date to JavaScript Date
 function excelSerialToDate(serial: number): Date {
@@ -74,11 +77,144 @@ declare module "express-session" {
       type: "customer" | "admin";
       accountCode?: string;
       accountName?: string;
+      mustChangePassword?: boolean;
     };
   }
 }
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MB hard cap
+    files: 1,
+    fields: 20,
+  },
+  fileFilter: (_req, file, cb) => {
+    const name = (file.originalname || "").toLowerCase();
+    const ok = name.endsWith(".csv") || name.endsWith(".xlsx") || name.endsWith(".xls");
+    if (!ok) {
+      return cb(new Error("Only .csv, .xls, or .xlsx files are allowed"));
+    }
+    cb(null, true);
+  },
+});
+
+// ---------- Per-account login lockout (in-memory, best-effort) ----------
+const MAX_LOGIN_FAILS = 5;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
+const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
+
+function lockoutKey(scope: "customer" | "admin", id: string): string {
+  return `${scope}:${id.toLowerCase()}`;
+}
+
+function isLockedOut(key: string): number {
+  const entry = loginAttempts.get(key);
+  if (!entry) return 0;
+  if (entry.lockedUntil > Date.now()) return entry.lockedUntil - Date.now();
+  if (entry.lockedUntil !== 0 && entry.lockedUntil <= Date.now()) loginAttempts.delete(key);
+  return 0;
+}
+
+function recordFailure(key: string) {
+  const entry = loginAttempts.get(key) || { count: 0, lockedUntil: 0 };
+  entry.count += 1;
+  if (entry.count >= MAX_LOGIN_FAILS) {
+    entry.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+    entry.count = 0;
+  }
+  loginAttempts.set(key, entry);
+}
+
+function clearFailures(key: string) {
+  loginAttempts.delete(key);
+}
+
+function safeStringEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ab.length !== bb.length) {
+    // Still consume time on a same-length comparison to avoid timing leaks.
+    crypto.timingSafeEqual(ab, ab);
+    return false;
+  }
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+function generateTempPassword(): string {
+  // 18 random bytes → 24 url-safe chars. Mix in a digit/symbol guarantee for policy compliance.
+  const base = crypto.randomBytes(18).toString("base64url");
+  return `${base}!9`;
+}
+
+function clientIp(req: Request): string {
+  const fwd = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim();
+  let ip = fwd || req.socket.remoteAddress || "unknown";
+  if (ip.startsWith("::ffff:")) ip = ip.substring(7);
+  return ip;
+}
+
+async function audit(
+  req: Request,
+  action: string,
+  opts: { actorType?: "admin" | "customer" | "system"; actorId?: string | null; targetType?: string | null; targetId?: string | null; payload?: unknown } = {},
+) {
+  try {
+    const sessUser = req.session?.user;
+    const actorType = opts.actorType || sessUser?.type || "system";
+    const actorId = opts.actorId ?? (sessUser?.type === "customer" ? sessUser.accountCode : sessUser?.type === "admin" ? "admin" : null);
+    await storage.createAuditEvent({
+      actorType,
+      actorId: actorId ?? null,
+      action,
+      targetType: opts.targetType ?? null,
+      targetId: opts.targetId ?? null,
+      ip: clientIp(req),
+      userAgent: (req.headers["user-agent"] as string | undefined) || null,
+      payload: opts.payload === undefined ? null : JSON.stringify(opts.payload),
+    });
+  } catch (err) {
+    console.error("audit log failure:", err);
+  }
+}
+
+// ---------- CSRF defense: require a custom header on mutating requests ----------
+function normalizeOrigin(input: string | undefined): string | null {
+  if (!input) return null;
+  try {
+    return new URL(input).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getRequestOrigin(req: Request): string {
+  const host = req.get("host") || "";
+  const protoHeader = (req.headers["x-forwarded-proto"] as string | undefined) || req.protocol;
+  const proto = String(protoHeader).split(",")[0].trim() || req.protocol || "http";
+  return `${proto}://${host}`;
+}
+
+function requireSameOriginHeader(req: Request, res: Response, next: NextFunction) {
+  const method = req.method.toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
+  // Login endpoints are exempt (no cookie yet, and require credentials anyway).
+  const exempt = ["/api/auth/customer/login", "/api/auth/admin/login", "/api/health"];
+  if (exempt.includes(req.path)) return next();
+
+  const headerOk = req.headers["x-requested-by"] === "lvc-portal";
+  const expectedOrigin = getRequestOrigin(req);
+  const requestOrigin = normalizeOrigin(req.get("origin") || undefined);
+  const refererOrigin = normalizeOrigin(req.get("referer") || undefined);
+  const originOk = requestOrigin === expectedOrigin || refererOrigin === expectedOrigin;
+  const secFetchSite = (req.get("sec-fetch-site") || "").toLowerCase();
+  const fetchSiteOk = secFetchSite === "same-origin" || secFetchSite === "same-site" || secFetchSite === "none";
+
+  if (!headerOk && !originOk && !fetchSiteOk) {
+    return res.status(403).json({ message: "Invalid request origin" });
+  }
+  next();
+}
 
 // Helper function to compute upcoming date based on status
 // Only shows parts date for "Awaiting Parts" jobs, visit date for "Pending Engineer" jobs
@@ -146,23 +282,51 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // Session setup
-  const MemoryStoreSession = MemoryStore(session);
+  if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    throw new Error(
+      "SESSION_SECRET environment variable must be set and at least 32 characters long",
+    );
+  }
+  const PgSession = connectPgSimple(session);
   app.use(
     session({
-      secret: process.env.SESSION_SECRET || "lvc-portal-secret-key",
+      secret: process.env.SESSION_SECRET,
+      name: "lvc.sid",
       resave: false,
       saveUninitialized: false,
-      store: new MemoryStoreSession({
-        checkPeriod: 86400000, // 24 hours
+      rolling: true,
+      store: new PgSession({
+        pool,
+        tableName: "user_sessions",
+        createTableIfMissing: true,
       }),
       cookie: {
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
-        sameSite: "lax",
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        sameSite: "strict",
+        maxAge: 12 * 60 * 60 * 1000, // 12 hour rolling window
       },
     })
   );
+
+  // CSRF: require a custom header on all mutating API calls. Browsers will not
+  // attach this header on cross-site requests, blocking classic CSRF.
+  app.use("/api", requireSameOriginHeader);
+
+  // Block customers with mustChangePassword=true from reaching any route except
+  // the password-change/logout/me endpoints. Belt-and-braces server-side enforcement.
+  app.use("/api", (req, res, next) => {
+    const u = req.session.user;
+    if (!u || u.type !== "customer" || !u.mustChangePassword) return next();
+    const allowedPaths = new Set([
+      "/api/auth/me",
+      "/api/auth/logout",
+      "/api/auth/change-password",
+      "/api/health",
+    ]);
+    if (allowedPaths.has(req.path)) return next();
+    return res.status(403).json({ message: "PASSWORD_CHANGE_REQUIRED" });
+  });
 
   // ==================== RATE LIMITING ====================
   
@@ -188,6 +352,11 @@ export async function registerRoutes(
   // Apply general rate limiting to all API routes
   app.use("/api/", apiRateLimiter);
 
+  // ==================== HEALTH CHECK ====================
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // ==================== AUTH ROUTES ====================
   
   // Check current auth status
@@ -199,32 +368,48 @@ export async function registerRoutes(
     }
   });
 
-  // Customer login (with rate limiting)
+  // Customer login (with rate limiting + per-account lockout)
   app.post("/api/auth/customer/login", loginRateLimiter, async (req, res) => {
     try {
-      const { accountCode, password } = req.body;
-      
-      if (!accountCode || !password) {
+      const { accountCode, password } = req.body || {};
+
+      if (typeof accountCode !== "string" || typeof password !== "string" || !accountCode || !password) {
         return res.status(400).json({ message: "Account code and password are required" });
+      }
+      if (accountCode.length > 64 || password.length > 256) {
+        return res.status(400).json({ message: "Invalid credentials" });
+      }
+
+      const key = lockoutKey("customer", accountCode);
+      const lockedFor = isLockedOut(key);
+      if (lockedFor > 0) {
+        return res.status(429).json({ message: `Account temporarily locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
       }
 
       const account = await storage.getCustomerAccountByCode(accountCode);
-      if (!account) {
+      // Always run bcrypt to keep timing roughly constant whether or not the account exists.
+      const dummyHash = "$2a$10$CwTycUXWue0Thq9StjUM0uJ8.OE8xvRgHJ3kQ8h2k5OKqQF7j2/X.";
+      const valid = await bcrypt.compare(password, account?.passwordHash || dummyHash);
+      if (!account || !valid) {
+        recordFailure(key);
+        await audit(req, "login.failure", { actorType: "customer", actorId: accountCode });
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
-      const valid = await bcrypt.compare(password, account.passwordHash);
-      if (!valid) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-
+      clearFailures(key);
       req.session.user = {
         type: "customer",
         accountCode: account.accountCode,
         accountName: account.accountName,
+        mustChangePassword: !!account.mustChangePassword,
       };
+      await storage.updateCustomerLastLogin(account.accountCode);
+      await audit(req, "login.success", { actorType: "customer", actorId: account.accountCode });
 
-      res.json({ user: req.session.user });
+      res.json({
+        user: req.session.user,
+        mustChangePassword: !!account.mustChangePassword,
+      });
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ message: "Internal server error" });
@@ -234,48 +419,47 @@ export async function registerRoutes(
   // Admin login (with rate limiting and IP allowlist)
   app.post("/api/auth/admin/login", loginRateLimiter, async (req, res) => {
     try {
-      const { password } = req.body;
+      const { password } = req.body || {};
       const adminPassword = process.env.ADMIN_PASSWORD;
       const allowedIPs = process.env.ADMIN_ALLOWED_IPS;
+      const ip = clientIp(req);
 
-      // Get client IP (handle proxies and normalize IPv6-mapped IPv4)
-      let clientIP = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || 
-                     req.socket.remoteAddress || 
-                     'unknown';
-      
-      // Normalize IPv6-mapped IPv4 addresses (::ffff:192.168.1.10 -> 192.168.1.10)
-      if (clientIP.startsWith('::ffff:')) {
-        clientIP = clientIP.substring(7);
+      if (typeof password !== "string" || !password || password.length > 256) {
+        return res.status(400).json({ message: "Password required" });
       }
 
       // Check IP allowlist if configured
       if (allowedIPs) {
-        const ipList = allowedIPs.split(',').map(ip => ip.trim());
-        // Check both the normalized IP and common variants
-        const isAllowed = ipList.includes('*') || 
-                          ipList.includes(clientIP) || 
-                          ipList.includes(`::ffff:${clientIP}`) ||
-                          ipList.some(ip => ip.startsWith('::ffff:') && ip.substring(7) === clientIP);
-        
+        const ipList = allowedIPs.split(',').map(p => p.trim());
+        const isAllowed = ipList.includes('*') ||
+                          ipList.includes(ip) ||
+                          ipList.includes(`::ffff:${ip}`) ||
+                          ipList.some(p => p.startsWith('::ffff:') && p.substring(7) === ip);
         if (!isAllowed) {
-          console.log(`Admin login blocked for IP: ${clientIP}`);
+          await audit(req, "admin.login.blocked_ip", { actorType: "admin", actorId: "admin" });
           return res.status(403).json({ message: "Access denied from this location" });
         }
       }
 
-      if (!adminPassword) {
+      if (!adminPassword || adminPassword.length < 16) {
         return res.status(500).json({ message: "Admin password not configured" });
       }
 
-      if (password !== adminPassword) {
+      const key = lockoutKey("admin", "admin");
+      const lockedFor = isLockedOut(key);
+      if (lockedFor > 0) {
+        return res.status(429).json({ message: `Admin login locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
+      }
+
+      if (!safeStringEqual(password, adminPassword)) {
+        recordFailure(key);
+        await audit(req, "admin.login.failure", { actorType: "admin", actorId: "admin" });
         return res.status(401).json({ message: "Invalid password" });
       }
 
-      req.session.user = {
-        type: "admin",
-      };
-
-      console.log(`Admin login successful from IP: ${clientIP}`);
+      clearFailures(key);
+      req.session.user = { type: "admin" };
+      await audit(req, "admin.login.success", { actorType: "admin", actorId: "admin" });
       res.json({ user: req.session.user });
     } catch (error) {
       console.error("Admin login error:", error);
@@ -285,12 +469,74 @@ export async function registerRoutes(
 
   // Logout
   app.post("/api/auth/logout", (req, res) => {
+    const sessUser = req.session.user;
     req.session.destroy((err) => {
       if (err) {
         return res.status(500).json({ message: "Logout failed" });
       }
+      res.clearCookie("lvc.sid");
+      // Best-effort fire-and-forget audit (session is gone, audit() will record actor as system).
+      if (sessUser) {
+        storage.createAuditEvent({
+          actorType: sessUser.type,
+          actorId: sessUser.type === "customer" ? sessUser.accountCode || null : "admin",
+          action: "logout",
+          targetType: null,
+          targetId: null,
+          ip: clientIp(req),
+          userAgent: (req.headers["user-agent"] as string | undefined) || null,
+          payload: null,
+        }).catch(() => undefined);
+      }
       res.json({ message: "Logged out" });
     });
+  });
+
+  // Customer change password (also clears mustChangePassword flag)
+  app.post("/api/auth/change-password", requireAuth("customer"), async (req, res) => {
+    try {
+      const accountCode = getAccountCode(req);
+      if (!accountCode) return res.status(400).json({ message: "Account code required" });
+
+      const schema = z.object({
+        currentPassword: z.string().min(1).max(256),
+        newPassword: z
+          .string()
+          .min(12, "New password must be at least 12 characters")
+          .max(256)
+          .refine((p) => /[A-Z]/.test(p) && /[a-z]/.test(p) && /[0-9]/.test(p), {
+            message: "Password must contain upper, lower, and number",
+          }),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid input" });
+      }
+      const { currentPassword, newPassword } = parsed.data;
+
+      const account = await storage.getCustomerAccountByCode(accountCode);
+      if (!account) return res.status(404).json({ message: "Account not found" });
+
+      const valid = await bcrypt.compare(currentPassword, account.passwordHash);
+      if (!valid) {
+        await audit(req, "password.change.failure", { actorType: "customer", actorId: accountCode });
+        return res.status(401).json({ message: "Current password is incorrect" });
+      }
+      if (currentPassword === newPassword) {
+        return res.status(400).json({ message: "New password must differ from current" });
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      await storage.updateCustomerAccountPassword(accountCode, passwordHash);
+      await storage.setMustChangePassword(accountCode, false);
+      if (req.session.user) req.session.user.mustChangePassword = false;
+      await audit(req, "password.change.success", { actorType: "customer", actorId: accountCode });
+
+      res.json({ message: "Password updated" });
+    } catch (error) {
+      console.error("Change password error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
   });
 
   // ==================== SYSTEM ROUTES ====================
@@ -446,32 +692,61 @@ export async function registerRoutes(
   app.post("/api/quotes/:quoteId/approve", requireAuth("customer"), async (req, res) => {
     try {
       const accountCode = getAccountCode(req);
+      if (!accountCode) return res.status(400).json({ message: "Account code required" });
+      const accountName = req.session.user?.accountName || accountCode;
       const { quoteId } = req.params;
-      const { approverName, approverEmail, customerPoNumber, termsAccepted } = req.body;
 
-      if (!approverName || !approverEmail || !termsAccepted) {
-        return res.status(400).json({ message: "All required fields must be provided" });
+      const schema = z.object({
+        contactName: z.string().trim().min(1).max(120).optional(),
+        contactEmail: z.string().trim().email().max(254).optional(),
+        customerPoNumber: z.string().trim().max(64).optional(),
+        termsAccepted: z.literal(true),
+        // Legacy keys still accepted as metadata only — NOT used as binding identity.
+        approverName: z.string().trim().max(120).optional(),
+        approverEmail: z.string().trim().email().max(254).optional(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Approval input invalid", issues: parsed.error.issues });
       }
+      const { contactName, contactEmail, customerPoNumber, approverName: bodyApproverName, approverEmail: bodyApproverEmail } = parsed.data;
 
-      const quote = await storage.getQuoteByQuoteId(quoteId, accountCode ?? undefined);
+      const quote = await storage.getQuoteByQuoteId(quoteId, accountCode);
       if (!quote) {
         return res.status(404).json({ message: "Quote not found" });
       }
+      if (quote.accountCode !== accountCode) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
 
-      // Create approval event
+      // Binding identity is the authenticated account. Customer-typed contact info
+      // is recorded as metadata in the payload but does not override session identity.
       await storage.createApprovalEvent({
         quoteId,
         jobId: quote.jobId,
         accountCode: quote.accountCode,
-        approverName,
-        approverEmail,
+        approverName: accountName,
+        approverEmail: contactEmail || bodyApproverEmail || `noreply+${accountCode}@account.local`,
         customerPoNumber: customerPoNumber || null,
         termsAccepted: true,
-        payload: JSON.stringify({ approvedAt: new Date().toISOString() }),
+        payload: JSON.stringify({
+          approvedAt: new Date().toISOString(),
+          accountCode,
+          contactName: contactName || bodyApproverName || null,
+          contactEmail: contactEmail || bodyApproverEmail || null,
+          ip: clientIp(req),
+          userAgent: (req.headers["user-agent"] as string | undefined) || null,
+        }),
       });
 
-      // Update quote status
       await storage.updateQuoteStatus(quoteId, "approved_pending_internal_processing");
+      await audit(req, "quote.approve", {
+        actorType: "customer",
+        actorId: accountCode,
+        targetType: "quote",
+        targetId: quoteId,
+        payload: { customerPoNumber: customerPoNumber || null },
+      });
 
       res.json({ message: "Approval recorded successfully" });
     } catch (error) {
@@ -784,6 +1059,24 @@ export async function registerRoutes(
     }
   });
 
+  // Admin audit log
+  app.get("/api/admin/audit", requireAuth("admin"), async (req, res) => {
+    try {
+      const { actorType, actorId, action, page, pageSize } = req.query;
+      const result = await storage.getAuditEvents({
+        actorType: actorType ? String(actorType) : undefined,
+        actorId: actorId ? String(actorId) : undefined,
+        action: action ? String(action) : undefined,
+        page: page ? parseInt(String(page), 10) : 1,
+        pageSize: pageSize ? parseInt(String(pageSize), 10) : 50,
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("Audit fetch error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // Admin Accounts
   app.get("/api/admin/accounts", requireAuth("admin"), async (req, res) => {
     try {
@@ -799,16 +1092,21 @@ export async function registerRoutes(
   app.patch("/api/admin/accounts/:accountCode/password", requireAuth("admin"), async (req, res) => {
     try {
       const { accountCode } = req.params;
-      const { password } = req.body;
+      const { password } = req.body || {};
 
-      if (!password || password.length < 6) {
-        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      if (typeof password !== "string" || password.length < 12 || password.length > 256) {
+        return res.status(400).json({ message: "Password must be 12-256 characters" });
       }
 
-      const passwordHash = await bcrypt.hash(password, 10);
+      const passwordHash = await bcrypt.hash(password, 12);
       await storage.updateCustomerAccountPassword(accountCode, passwordHash);
+      await storage.setMustChangePassword(accountCode, true);
+      await audit(req, "admin.account.password_reset", {
+        targetType: "customer_account",
+        targetId: accountCode,
+      });
 
-      res.json({ message: "Password updated" });
+      res.json({ message: "Password updated", mustChangePassword: true });
     } catch (error) {
       console.error("Password reset error:", error);
       res.status(500).json({ message: "Internal server error" });
@@ -1307,16 +1605,21 @@ export async function registerRoutes(
         });
       }
 
-      // Create new customer accounts with default password
+      // Create new customer accounts. Each gets a strong, random temporary password
+      // and is flagged mustChangePassword=true. Generated passwords are returned ONCE
+      // to the admin in the response so they can be securely communicated.
+      const newAccounts: Array<{ accountCode: string; accountName: string; tempPassword: string }> = [];
       if (accountsToCreate.size > 0) {
-        const hashedPassword = await bcrypt.hash("AdminLVC123", 10);
         for (const entry of Array.from(accountsToCreate.entries())) {
           const [code, account] = entry;
+          const tempPassword = generateTempPassword();
+          const hashedPassword = await bcrypt.hash(tempPassword, 12);
           await storage.createCustomerAccount({
             accountCode: code,
             accountName: account.name,
             passwordHash: hashedPassword,
           });
+          newAccounts.push({ accountCode: code, accountName: account.name, tempPassword });
         }
       }
 
@@ -1331,10 +1634,21 @@ export async function registerRoutes(
       // Update last import timestamp
       await storage.setSystemSetting("last_import", new Date().toISOString());
 
+      await audit(req, "admin.import.replace", {
+        targetType: "jobs",
+        targetId: null,
+        payload: {
+          jobsImported: jobsToInsert.length,
+          accountsCreated: accountsToCreate.size,
+          newAccountCodes: newAccounts.map((a) => a.accountCode),
+        },
+      });
+
       res.json({
         success: true,
         jobsImported: jobsToInsert.length,
         accountsCreated: accountsToCreate.size,
+        newAccounts, // Includes one-time temporary passwords — admin must distribute securely.
         duplicatesSkipped: data.length - jobsToInsert.length - errors.length,
         errorCount: errors.length,
         errors: errors.slice(0, 20),

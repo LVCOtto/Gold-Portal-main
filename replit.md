@@ -8,10 +8,12 @@ The application serves two user types:
 - **Customers**: Log in to view their own jobs, quotes, and approve quotations
 - **Admins**: Upload/import datasets and manage customer accounts
 
-## Demo Credentials
+## Credentials
 
-- **Customer Login**: Account Code: `5009440` (ACT Clean), `5008896` (Axminster Services), or any of the 205+ imported accounts, Password: `AdminLVC123`
-- **Admin Login**: Password: `AdminLVC123`
+All credentials are managed in the deployment platform (Railway).
+Customer accounts created by import receive a randomly generated password
+that must be reset by an admin before first use.
+Admin password is configured via the `ADMIN_PASSWORD` environment variable.
 
 ## User Preferences
 
@@ -165,7 +167,9 @@ shared/
 ```
 
 ## Environment Variables Required
-- `DATABASE_URL`: PostgreSQL connection string (auto-configured)
-- `ADMIN_PASSWORD`: Password for admin access
-- `SESSION_SECRET`: Secret key for session encryption (optional)
+- `DATABASE_URL`: PostgreSQL connection string (required)
+- `ADMIN_PASSWORD`: Strong random password for admin access (required, 16+ chars)
+- `SESSION_SECRET`: 32+ char random secret for session signing (required, server refuses to start without it)
 - `ADMIN_ALLOWED_IPS`: Comma-separated list of allowed IPs for admin login (optional, use `*` to allow all)
+- `AUTO_IMPORT_ENABLED`: Set to `false` in cloud deployments without local file system access
+- `FORCE_HTTPS`: Set to `true` in production to redirect HTTP requests to HTTPS
