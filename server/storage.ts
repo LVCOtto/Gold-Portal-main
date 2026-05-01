@@ -446,6 +446,7 @@ export class DatabaseStorage implements IStorage {
       awaitingApproval: Number(awaitingApprovalResult.count),
       awaitingParts: Number(awaitingPartsResult.count),
       recentlyClosed: Number(recentlyClosedResult.count),
+      quotedJobs: Number(awaitingApprovalResult.count),
     };
   }
 

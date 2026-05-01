@@ -199,7 +199,7 @@ function requireSameOriginHeader(req: Request, res: Response, next: NextFunction
   const method = req.method.toUpperCase();
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
   // Login endpoints are exempt (no cookie yet, and require credentials anyway).
-  // Upload endpoints are also exempt — they're protected by requireAuth("admin") already.
+  // Upload endpoints are also exempt; they're protected by requireAuth("admin") already.
   const exempt = [
     "/api/auth/customer/login",
     "/api/auth/admin/login",
@@ -207,7 +207,8 @@ function requireSameOriginHeader(req: Request, res: Response, next: NextFunction
     "/api/admin/imports",
     "/api/admin/import-replace",
   ];
-  if (exempt.some((p) => req.path === p || req.path.startsWith(p + "/"))) return next();
+  const requestPath = req.originalUrl.split("?")[0];
+  if (exempt.some((p) => requestPath === p || requestPath.startsWith(p + "/"))) return next();
 
   const headerOk = req.headers["x-requested-by"] === "lvc-portal";
   const expectedOrigin = getRequestOrigin(req);

@@ -192,7 +192,7 @@ async function importJobsFromLiveFile(filePath: string) {
 
   if (accountsToCreate.size > 0) {
     const crypto = await import("crypto");
-    for (const [code, account] of accountsToCreate.entries()) {
+    for (const [code, account] of Array.from(accountsToCreate.entries())) {
       // Each new account gets a random temporary password and must reset it on first login.
       const tempPassword = `${crypto.randomBytes(18).toString("base64url")}!9`;
       const hashedPassword = await bcrypt.hash(tempPassword, 12);
