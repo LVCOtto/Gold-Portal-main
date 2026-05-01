@@ -82,7 +82,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCustomerAccountByCode(accountCode: string): Promise<CustomerAccount | undefined> {
-    const [account] = await db.select().from(customerAccounts).where(eq(customerAccounts.accountCode, accountCode));
+    const normalizedCode = accountCode.trim();
+    const [account] = await db
+      .select()
+      .from(customerAccounts)
+      .where(sql`lower(${customerAccounts.accountCode}) = lower(${normalizedCode})`)
+      .limit(1);
     return account || undefined;
   }
 

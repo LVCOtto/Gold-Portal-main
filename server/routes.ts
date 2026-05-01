@@ -387,23 +387,24 @@ export async function registerRoutes(
       if (typeof accountCode !== "string" || typeof password !== "string" || !accountCode || !password) {
         return res.status(400).json({ message: "Account code and password are required" });
       }
-      if (accountCode.length > 64 || password.length > 256) {
+      const normalizedAccountCode = accountCode.trim();
+      if (!normalizedAccountCode || normalizedAccountCode.length > 64 || password.length > 256) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
-      const key = lockoutKey("customer", accountCode);
+      const key = lockoutKey("customer", normalizedAccountCode);
       const lockedFor = isLockedOut(key);
       if (lockedFor > 0) {
         return res.status(429).json({ message: `Account temporarily locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
       }
 
-      const account = await storage.getCustomerAccountByCode(accountCode);
+      const account = await storage.getCustomerAccountByCode(normalizedAccountCode);
       // Always run bcrypt to keep timing roughly constant whether or not the account exists.
       const dummyHash = "$2a$10$CwTycUXWue0Thq9StjUM0uJ8.OE8xvRgHJ3kQ8h2k5OKqQF7j2/X.";
       const valid = await bcrypt.compare(password, account?.passwordHash || dummyHash);
       if (!account || !valid) {
         recordFailure(key);
-        await audit(req, "login.failure", { actorType: "customer", actorId: accountCode });
+        await audit(req, "login.failure", { actorType: "customer", actorId: normalizedAccountCode });
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
@@ -1093,7 +1094,8 @@ export async function registerRoutes(
     try {
       const { search } = req.query;
       const accounts = await storage.getAllCustomerAccounts(search as string);
-      res.json(accounts);
+      const safeAccounts = accounts.map(({ passwordHash, ...account }) => account);
+      res.json(safeAccounts);
     } catch (error) {
       console.error("Accounts fetch error:", error);
       res.status(500).json({ message: "Internal server error" });
@@ -1102,22 +1104,30 @@ export async function registerRoutes(
 
   app.patch("/api/admin/accounts/:accountCode/password", requireAuth("admin"), async (req, res) => {
     try {
-      const { accountCode } = req.params;
+      const accountCode = req.params.accountCode.trim();
       const { password } = req.body || {};
 
       if (typeof password !== "string" || password.length < 12 || password.length > 256) {
         return res.status(400).json({ message: "Password must be 12-256 characters" });
       }
+      if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+        return res.status(400).json({ message: "Password must contain upper, lower, and number" });
+      }
+
+      const account = await storage.getCustomerAccountByCode(accountCode);
+      if (!account) {
+        return res.status(404).json({ message: "Customer account not found" });
+      }
 
       const passwordHash = await bcrypt.hash(password, 12);
-      await storage.updateCustomerAccountPassword(accountCode, passwordHash);
-      await storage.setMustChangePassword(accountCode, true);
+      await storage.updateCustomerAccountPassword(account.accountCode, passwordHash);
+      await storage.setMustChangePassword(account.accountCode, true);
       await audit(req, "admin.account.password_reset", {
         targetType: "customer_account",
-        targetId: accountCode,
+        targetId: account.accountCode,
       });
 
-      res.json({ message: "Password updated", mustChangePassword: true });
+      res.json({ message: "Password updated", accountCode: account.accountCode, mustChangePassword: true });
     } catch (error) {
       console.error("Password reset error:", error);
       res.status(500).json({ message: "Internal server error" });

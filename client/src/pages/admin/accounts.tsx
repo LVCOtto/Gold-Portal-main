@@ -18,7 +18,13 @@ import { format } from "date-fns";
 import type { CustomerAccount } from "@shared/schema";
 
 const resetPasswordSchema = z.object({
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z
+    .string()
+    .min(12, "Password must be at least 12 characters")
+    .max(256, "Password must be 256 characters or fewer")
+    .refine((password) => /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password), {
+      message: "Password must contain upper case, lower case, and a number",
+    }),
 });
 
 type ResetPasswordForm = z.infer<typeof resetPasswordSchema>;
@@ -36,11 +42,7 @@ function ResetPasswordDialog({ account, onSuccess }: { account: CustomerAccount;
 
   const mutation = useMutation({
     mutationFn: async (data: ResetPasswordForm) => {
-      const response = await apiRequest("PATCH", `/api/admin/accounts/${account.accountCode}/password`, data);
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to reset password");
-      }
+      const response = await apiRequest("PATCH", `/api/admin/accounts/${encodeURIComponent(account.accountCode)}/password`, data);
       return response.json();
     },
     onSuccess: () => {
@@ -81,8 +83,11 @@ function ResetPasswordDialog({ account, onSuccess }: { account: CustomerAccount;
                 <FormItem>
                   <FormLabel>New Password (required)</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="Minimum 6 characters" {...field} data-testid="input-new-password" />
+                    <Input type="password" placeholder="Minimum 12 characters" {...field} data-testid="input-new-password" />
                   </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    Customer will use this once, then set their own password on first login.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}
