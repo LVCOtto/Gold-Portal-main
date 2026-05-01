@@ -47,24 +47,32 @@ function parseFlexibleDate(dateStr: unknown): Date | null {
   
   const trimmed = dateStr.trim();
   if (!trimmed) return null;
-  
-  // Check if it's a numeric string (Excel serial number)
-  const numericValue = parseFloat(trimmed);
-  if (!isNaN(numericValue) && numericValue > 1 && numericValue < 100000) {
-    // This is likely an Excel serial date
-    return excelSerialToDate(Math.floor(numericValue));
+
+  const ukFormats = [
+    "d/M/yyyy H:mm:ss",
+    "d/M/yyyy H:mm",
+    "d/M/yyyy",
+    "d-M-yyyy H:mm:ss",
+    "d-M-yyyy H:mm",
+    "d-M-yyyy",
+  ];
+
+  for (const format of ukFormats) {
+    const parsed = dateFnsParse(trimmed, format, new Date());
+    if (isValidDate(parsed)) return parsed;
+  }
+
+  // Check if the whole string is a numeric Excel serial date. Do this after UK
+  // date parsing so values like "16/04/2026 00:00" are not mistaken for 16.
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const numericValue = Number(trimmed);
+    if (numericValue > 1 && numericValue < 100000) {
+      return excelSerialToDate(Math.floor(numericValue));
+    }
   }
   
-  // Try UK format first (dd/MM/yyyy)
-  let parsed = dateFnsParse(trimmed, 'dd/MM/yyyy', new Date());
-  if (isValidDate(parsed)) return parsed;
-  
-  // Try UK format with time (dd/MM/yyyy HH:mm)
-  parsed = dateFnsParse(trimmed, 'dd/MM/yyyy HH:mm', new Date());
-  if (isValidDate(parsed)) return parsed;
-  
   // Try ISO format
-  parsed = new Date(trimmed);
+  const parsed = new Date(trimmed);
   if (isValidDate(parsed)) return parsed;
   
   return null;
@@ -224,16 +232,13 @@ function requireSameOriginHeader(req: Request, res: Response, next: NextFunction
   next();
 }
 
-// Helper function to compute upcoming date based on status
-// Only shows parts date for "Awaiting Parts" jobs, visit date for "Pending Engineer" jobs
+// Helper function to compute the customer-facing ETA/date based on status.
+// Shows parts date for "Awaiting Parts" jobs, visit date for "Pending Engineer" jobs.
 // Supports date override that persists until job status changes
 function computeUpcomingDate(
   job: { dueDate?: Date | null; visitDate?: Date | null; status?: string | null },
   override?: { dateOverride?: Date | null; statusAtOverride?: string | null } | null
 ): { date: Date; type: 'parts' | 'visit' } | null {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0); // Start of today
-  
   const status = (job.status || '').toLowerCase();
   const isAwaitingParts = status.includes('awaiting parts');
   const isPendingVisit = status.includes('pending engineer') || status.includes('engineer visit');
@@ -245,22 +250,20 @@ function computeUpcomingDate(
     // If status matches, use the override date
     if (overrideStatus === currentStatus) {
       const overrideDate = new Date(override.dateOverride);
-      if (overrideDate >= now) {
-        // Determine type based on current status
-        const type = isAwaitingParts ? 'parts' : 'visit';
-        return { date: overrideDate, type };
-      }
+      // Determine type based on current status
+      const type = isAwaitingParts ? 'parts' : 'visit';
+      return { date: overrideDate, type };
     }
     // Status changed - override is ignored, fall through to normal logic
   }
   
   // Only show parts date if status is "Awaiting Parts"
-  if (isAwaitingParts && job.dueDate && new Date(job.dueDate) >= now) {
+  if (isAwaitingParts && job.dueDate) {
     return { date: new Date(job.dueDate), type: 'parts' };
   }
   
   // Only show visit date if status is "Pending Engineer Visit"
-  if (isPendingVisit && job.visitDate && new Date(job.visitDate) >= now) {
+  if (isPendingVisit && job.visitDate) {
     return { date: new Date(job.visitDate), type: 'visit' };
   }
   
@@ -1498,13 +1501,20 @@ export async function registerRoutes(
       // Validate required columns
       const firstRow = data[0];
       const columns = Object.keys(firstRow);
-      const requiredColumns = ["JobID", "Account Code", "Site Name", "Portal Status"];
-      const missingColumns = requiredColumns.filter(col => !columns.includes(col));
+      const requiredColumnGroups = [
+        { label: "Job ID", names: ["JobID", "job_id", "JobId"] },
+        { label: "Account Code", names: ["Account Code", "account_code", "AccountCode", "Customer Alpha Code", "dbo_tblCustomer_Alpha"] },
+        { label: "Site Name", names: ["Site Name", "site_name", "SiteName", "dbo_tblCustomer_1_Name", "Site Alpha", "dbo_tblCustomer_1_Alpha"] },
+        { label: "Status", names: ["Portal Status", "portal_status", "StatusLabel", "PortalStage", "Status", "status"] },
+      ];
+      const missingColumns = requiredColumnGroups
+        .filter((group) => !group.names.some((name) => columns.includes(name)))
+        .map((group) => group.label);
       
       if (missingColumns.length > 0) {
         return res.status(400).json({ 
           message: `Missing required columns: ${missingColumns.join(", ")}`,
-          hint: `Expected columns: ${requiredColumns.join(", ")}`,
+          hint: "Expected a recognized job ID, account code, site name, and status column",
           foundColumns: columns
         });
       }
@@ -1553,23 +1563,28 @@ export async function registerRoutes(
 
         try {
           const jobId = getCol(row, 'JobID', 'job_id', 'JobId');
-          const accountCode = getCol(row, 'Account Code', 'account_code', 'AccountCode');
-          const accountName = getCol(row, 'Account Name', 'account_name', 'AccountName');
-          const siteName = getCol(row, 'Site Name', 'site_name', 'SiteName');
-          const portalStatus = getCol(row, 'Portal Status', 'portal_status');
-          const jobType = getCol(row, 'Job Type', 'job_type', 'JobType');
+          const accountCode = getCol(row, 'Account Code', 'account_code', 'AccountCode', 'Customer Alpha Code', 'dbo_tblCustomer_Alpha');
+          const accountName = getCol(row, 'Account Name', 'account_name', 'AccountName', 'Customer Name', 'dbo_tblCustomer_Name');
+          const siteName = getCol(row, 'Site Name', 'site_name', 'SiteName', 'dbo_tblCustomer_1_Name', 'Site Alpha', 'dbo_tblCustomer_1_Alpha');
+          const portalStatus = getCol(row, 'Portal Status', 'portal_status', 'StatusLabel', 'PortalStage');
+          const internalStatus = getCol(row, 'Status', 'status');
+          const displayStatus = portalStatus || internalStatus;
+          const jobType = getCol(row, 'Job Type', 'job_type', 'JobType', 'dbo_tblJobType_Name');
           const equipment = getCol(row, 'Equipment', 'equipment');
           const engineerName = getCol(row, 'Allocated Engineer', 'engineer_name', 'Employee', 'Engineer');
-          const visitDate = getCol(row, 'Visit Date', 'visit_date', 'VisitDate');
-          const partsDue = getCol(row, 'Parts Due', 'parts_due', 'due_date');
-          const jobValue = getCol(row, 'Total Job Value', 'job_value_estimate', 'JobValue');
+          const etaDate = getCol(row, 'ETA', 'Eta', 'ETA Date', 'eta_date');
+          const statusText = displayStatus ? String(displayStatus).toLowerCase() : '';
+          const visitDate = getCol(row, 'Visit Date', 'visit_date', 'VisitDate', 'Scheduled Date', 'Engineer Visit Date') || (statusText.includes('pending engineer') ? etaDate : null);
+          const partsDue = getCol(row, 'Parts Due', 'parts_due', 'due_date', 'Due', 'DueDate', 'Parts ETA', 'Parts ETA Date') || (statusText.includes('awaiting parts') ? etaDate : null);
+          const jobValue = getCol(row, 'Total Job Value', 'job_value_estimate', 'JobValue', 'Job Value');
+          const postCode = getCol(row, 'PostCode', 'postcode', 'post_code');
 
           if (!jobId || !accountCode || !siteName) {
             errors.push({ row: rowNum, message: "Missing required fields (JobID, Account Code, or Site Name)" });
             continue;
           }
 
-          const jobIdStr = String(jobId);
+          const jobIdStr = String(jobId).trim();
           if (seenJobIds.has(jobIdStr)) {
             continue; // Skip duplicate job IDs
           }
@@ -1583,19 +1598,26 @@ export async function registerRoutes(
             accountsToCreate.set(accountCodeStr, { code: accountCodeStr, name: accountNameStr });
           }
 
+          let shortDescription = jobType ? String(jobType).trim() : "No description";
+          if (equipment) {
+            shortDescription += ` - ${String(equipment).trim()}`;
+          }
+
+          const fullSiteName = postCode ? `${String(siteName).trim()} (${String(postCode).trim()})` : String(siteName).trim();
+
           jobsToInsert.push({
             jobId: jobIdStr,
             accountCode: accountCodeStr,
-            siteName: String(siteName).trim(),
-            status: portalStatus ? String(portalStatus) : "Unknown",
+            siteName: fullSiteName,
+            status: displayStatus ? String(displayStatus).trim() : "Unknown",
             createdDate: new Date(),
             lastUpdatedDate: new Date(),
-            shortDescription: jobType ? String(jobType).trim() : "No description",
+            shortDescription,
             engineerName: engineerName ? String(engineerName).trim() : null,
             lastVisitDate: null,
             nextActionDueDate: null,
             priority: null,
-            jobValueEstimate: jobValue ? String(jobValue).replace(/[^0-9.]/g, '') : null,
+            jobValueEstimate: jobValue ? String(jobValue).replace(/[^0-9.-]/g, '') : null,
             dueDate: parseFlexibleDate(partsDue ? String(partsDue) : null),
             visitDate: parseFlexibleDate(visitDate ? String(visitDate) : null),
             equipment: equipment ? String(equipment).trim() : null,

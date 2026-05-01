@@ -213,7 +213,7 @@ export default function JobsPage() {
                         <SortableHeader label="Job ID" field="jobId" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} />
                         <SortableHeader label="Site" field="siteName" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} />
                         <SortableHeader label="Status" field="status" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} />
-                        <th className="pb-3 font-medium text-xs uppercase tracking-wide text-muted-foreground hidden lg:table-cell">Upcoming Date</th>
+                        <th className="pb-3 font-medium text-xs uppercase tracking-wide text-muted-foreground hidden lg:table-cell">ETA / Scheduled</th>
                         <SortableHeader label="Last Updated" field="lastUpdatedDate" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="hidden md:table-cell" />
                         <th className="pb-3 font-medium text-xs uppercase tracking-wide text-muted-foreground hidden sm:table-cell">Update</th>
                         <th className="pb-3"></th>

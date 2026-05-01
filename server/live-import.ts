@@ -40,16 +40,26 @@ function parseFlexibleDate(dateStr: unknown): Date | null {
   const trimmed = dateStr.trim();
   if (!trimmed) return null;
 
-  const numericValue = Number.parseFloat(trimmed);
-  if (!Number.isNaN(numericValue) && numericValue > 1 && numericValue < 100000) {
-    return excelSerialToDate(Math.floor(numericValue));
+  const ukFormats = [
+    "d/M/yyyy H:mm:ss",
+    "d/M/yyyy H:mm",
+    "d/M/yyyy",
+    "d-M-yyyy H:mm:ss",
+    "d-M-yyyy H:mm",
+    "d-M-yyyy",
+  ];
+
+  for (const format of ukFormats) {
+    const parsed = dateFnsParse(trimmed, format, new Date());
+    if (isValidDate(parsed)) return parsed;
   }
 
-  let parsed = dateFnsParse(trimmed, "dd/MM/yyyy", new Date());
-  if (isValidDate(parsed)) return parsed;
-
-  parsed = dateFnsParse(trimmed, "dd/MM/yyyy HH:mm", new Date());
-  if (isValidDate(parsed)) return parsed;
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const numericValue = Number(trimmed);
+    if (numericValue > 1 && numericValue < 100000) {
+      return excelSerialToDate(Math.floor(numericValue));
+    }
+  }
 
   const isoParsed = new Date(trimmed);
   return isValidDate(isoParsed) ? isoParsed : null;
@@ -133,8 +143,10 @@ async function importJobsFromLiveFile(filePath: string) {
       const jobType = getCol(row, "Job Type", "job_type", "JobType");
       const equipment = getCol(row, "Equipment", "equipment");
       const engineerName = getCol(row, "Allocated Engineer", "engineer_name", "Employee", "Engineer");
-      const visitDate = getCol(row, "Visit Date", "visit_date", "VisitDate");
-      const partsDue = getCol(row, "Parts Due", "parts_due", "due_date", "Due", "DueDate");
+      const etaDate = getCol(row, "ETA", "Eta", "ETA Date", "eta_date");
+      const statusText = displayStatus ? String(displayStatus).toLowerCase() : "";
+      const visitDate = getCol(row, "Visit Date", "visit_date", "VisitDate", "Scheduled Date", "Engineer Visit Date") || (statusText.includes("pending engineer") ? etaDate : null);
+      const partsDue = getCol(row, "Parts Due", "parts_due", "due_date", "Due", "DueDate", "Parts ETA", "Parts ETA Date") || (statusText.includes("awaiting parts") ? etaDate : null);
       const jobValue = getCol(row, "Total Job Value", "job_value_estimate", "JobValue", "Job Value");
       const postCode = getCol(row, "PostCode", "postcode", "post_code");
 
