@@ -57,10 +57,14 @@ function ProtectedRoute({
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, mustChangePassword } = useAuth();
 
   if (isLoading) {
     return <LoadingScreen />;
+  }
+
+  if (user?.type === "customer" && mustChangePassword) {
+    return <Redirect to="/change-password" />;
   }
 
   if (user) {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
 
 export default function ChangePasswordPage() {
-  const { user, clearMustChangePassword } = useAuth();
+  const { user, isLoading, mustChangePassword, logout, clearMustChangePassword } = useAuth();
   const [, setLocation] = useLocation();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -56,6 +56,26 @@ export default function ChangePasswordPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Redirect to="/" />;
+  }
+
+  if (user.type === "admin") {
+    return <Redirect to="/admin" />;
+  }
+
+  if (!mustChangePassword) {
+    return <Redirect to="/dashboard" />;
   }
 
   return (
@@ -116,6 +136,9 @@ export default function ChangePasswordPage() {
 
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Update password"}
+            </Button>
+            <Button type="button" variant="outline" className="w-full" onClick={logout} disabled={submitting}>
+              Sign out instead
             </Button>
           </form>
         </CardContent>
