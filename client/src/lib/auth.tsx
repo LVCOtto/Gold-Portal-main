@@ -6,6 +6,7 @@ interface User {
   type: "customer" | "admin";
   accountCode?: string;
   accountName?: string;
+  mustChangePassword?: boolean;
 }
 
 interface AuthContextType {
@@ -35,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const data = await response.json();
         setUser(data.user);
+        setMustChangePassword(!!data.user?.mustChangePassword);
       }
     } catch (error) {
       console.error("Auth check failed:", error);

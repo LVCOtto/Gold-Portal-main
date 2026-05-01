@@ -329,13 +329,14 @@ export async function registerRoutes(
   app.use("/api", (req, res, next) => {
     const u = req.session.user;
     if (!u || u.type !== "customer" || !u.mustChangePassword) return next();
+    const requestPath = `${req.baseUrl}${req.path}`;
     const allowedPaths = new Set([
       "/api/auth/me",
       "/api/auth/logout",
       "/api/auth/change-password",
       "/api/health",
     ]);
-    if (allowedPaths.has(req.path)) return next();
+    if (allowedPaths.has(requestPath)) return next();
     return res.status(403).json({ message: "PASSWORD_CHANGE_REQUIRED" });
   });
 
