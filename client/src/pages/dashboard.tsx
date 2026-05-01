@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CustomerLayout } from "@/components/customer-layout";
 import { StatusBadge } from "@/components/status-badge";
 import { PriorityBadge } from "@/components/priority-badge";
+import { useCustomerPortal } from "@/lib/customer-portal";
 import { format } from "date-fns";
 import type { Job } from "@shared/schema";
 import { useState } from "react";
@@ -80,6 +81,8 @@ function MetricTile({
 }
 
 function RecentJobsTable({ jobs, isLoading }: { jobs: JobWithExtras[]; isLoading: boolean }) {
+  const portal = useCustomerPortal();
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -106,7 +109,7 @@ function RecentJobsTable({ jobs, isLoading }: { jobs: JobWithExtras[]; isLoading
         return (
           <Link
             key={job.id}
-            href={`/jobs/${job.jobId}`}
+            href={portal.routes.jobDetail(job.jobId)}
             className="flex items-center justify-between p-4 rounded-md bg-card border hover-elevate"
             data-testid={`row-job-${job.jobId}`}
           >
@@ -143,14 +146,15 @@ function RecentJobsTable({ jobs, isLoading }: { jobs: JobWithExtras[]; isLoading
 }
 
 export default function DashboardPage() {
+  const portal = useCustomerPortal();
   const [searchQuery, setSearchQuery] = useState("");
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
-    queryKey: ["/api/dashboard/stats"],
+    queryKey: [portal.api.dashboardStats, portal.accountParams],
   });
 
   const { data: recentJobsData, isLoading: jobsLoading } = useQuery<JobsResponse>({
-    queryKey: ["/api/jobs", { limit: 5, search: searchQuery }],
+    queryKey: [portal.api.jobs, portal.withAccountParams({ limit: 5, search: searchQuery })],
   });
   
   const recentJobs = recentJobsData?.jobs ?? [];
@@ -165,7 +169,7 @@ export default function DashboardPage() {
           </div>
           <Button
             variant="outline"
-            onClick={() => window.location.href = "/api/export/jobs/pdf"}
+            onClick={() => window.location.href = portal.api.exportJobsPdf()}
             data-testid="button-export-jobs-pdf"
           >
             <Download className="h-4 w-4 mr-2" />
@@ -178,7 +182,7 @@ export default function DashboardPage() {
             title="Open Jobs"
             value={stats?.openJobs ?? 0}
             icon={Briefcase}
-            href="/jobs?status=open"
+            href={portal.routes.jobsWithStatus("open")}
             isLoading={statsLoading}
             accentColor="primary"
           />
@@ -186,7 +190,7 @@ export default function DashboardPage() {
             title="Awaiting Approval"
             value={stats?.awaitingApproval ?? 0}
             icon={Clock}
-            href="/jobs?status=quoted"
+            href={portal.routes.jobsWithStatus("quoted")}
             isLoading={statsLoading}
             accentColor="accent"
           />
@@ -194,7 +198,7 @@ export default function DashboardPage() {
             title="Awaiting Parts"
             value={stats?.awaitingParts ?? 0}
             icon={Package}
-            href="/jobs?status=awaiting_parts"
+            href={portal.routes.jobsWithStatus("awaiting_parts")}
             isLoading={statsLoading}
             accentColor="primary"
           />
@@ -202,7 +206,7 @@ export default function DashboardPage() {
             title="Recently Closed"
             value={stats?.recentlyClosed ?? 0}
             icon={CheckCircle}
-            href="/jobs?status=closed"
+            href={portal.routes.jobsWithStatus("closed")}
             isLoading={statsLoading}
             accentColor="muted"
           />
@@ -226,7 +230,7 @@ export default function DashboardPage() {
             <RecentJobsTable jobs={recentJobs} isLoading={jobsLoading} />
             
             <div className="mt-4 text-center">
-              <Link href="/jobs">
+              <Link href={portal.routes.jobs}>
                 <Button variant="outline" data-testid="button-view-all-jobs">
                   View All Jobs
                   <ArrowRight className="ml-2 h-4 w-4" />

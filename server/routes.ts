@@ -288,6 +288,36 @@ function getAccountCode(req: Request): string | null {
   return req.session.user?.type === "customer" ? req.session.user.accountCode ?? null : null;
 }
 
+async function getScopedAccountCode(req: Request, res: Response): Promise<string | null> {
+  const sessionUser = req.session.user;
+  if (sessionUser?.type === "customer") {
+    if (!sessionUser.accountCode) {
+      res.status(400).json({ message: "Account code required" });
+      return null;
+    }
+    return sessionUser.accountCode;
+  }
+
+  if (sessionUser?.type === "admin") {
+    const requestedAccountCode = typeof req.query.accountCode === "string" ? req.query.accountCode.trim() : "";
+    if (!requestedAccountCode) {
+      res.status(400).json({ message: "Account code required" });
+      return null;
+    }
+
+    const account = await storage.getCustomerAccountByCode(requestedAccountCode);
+    if (!account) {
+      res.status(404).json({ message: "Account not found" });
+      return null;
+    }
+
+    return account.accountCode;
+  }
+
+  res.status(401).json({ message: "Unauthorized" });
+  return null;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -566,11 +596,11 @@ export async function registerRoutes(
 
   // ==================== CUSTOMER DASHBOARD ROUTES ====================
   
-  app.get("/api/dashboard/stats", requireAuth("customer"), async (req, res) => {
+  app.get("/api/dashboard/stats", requireAuth(), async (req, res) => {
     try {
-      const accountCode = getAccountCode(req);
+      const accountCode = await getScopedAccountCode(req, res);
       if (!accountCode) {
-        return res.status(400).json({ message: "Account code required" });
+        return;
       }
 
       const stats = await storage.getDashboardStats(accountCode);
@@ -583,11 +613,11 @@ export async function registerRoutes(
 
   // ==================== JOBS ROUTES ====================
   
-  app.get("/api/jobs", requireAuth("customer"), async (req, res) => {
+  app.get("/api/jobs", requireAuth(), async (req, res) => {
     try {
-      const accountCode = getAccountCode(req);
+      const accountCode = await getScopedAccountCode(req, res);
       if (!accountCode) {
-        return res.status(400).json({ message: "Account code required" });
+        return;
       }
 
       const { page, search, status, limit, sortBy, sortOrder } = req.query;
@@ -624,12 +654,15 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/jobs/:jobId", requireAuth("customer"), async (req, res) => {
+  app.get("/api/jobs/:jobId", requireAuth(), async (req, res) => {
     try {
-      const accountCode = getAccountCode(req);
+      const accountCode = await getScopedAccountCode(req, res);
+      if (!accountCode) {
+        return;
+      }
       const { jobId } = req.params;
 
-      const job = await storage.getJobByJobId(jobId, accountCode ?? undefined);
+      const job = await storage.getJobByJobId(jobId, accountCode);
       if (!job) {
         return res.status(404).json({ message: "Job not found" });
       }
@@ -638,8 +671,8 @@ export async function registerRoutes(
       const override = await storage.getJobOverride(jobId);
       const upcoming = computeUpcomingDate(job, override);
 
-      const quotes = await storage.getQuotesByJobId(jobId, accountCode ?? undefined);
-      const purchaseOrders = await storage.getPurchaseOrdersByJobId(jobId, accountCode ?? undefined);
+      const quotes = await storage.getQuotesByJobId(jobId, accountCode);
+      const purchaseOrders = await storage.getPurchaseOrdersByJobId(jobId, accountCode);
 
       res.json({ 
         job: {
@@ -660,11 +693,11 @@ export async function registerRoutes(
 
   // ==================== QUOTES ROUTES ====================
   
-  app.get("/api/quotes", requireAuth("customer"), async (req, res) => {
+  app.get("/api/quotes", requireAuth(), async (req, res) => {
     try {
-      const accountCode = getAccountCode(req);
+      const accountCode = await getScopedAccountCode(req, res);
       if (!accountCode) {
-        return res.status(400).json({ message: "Account code required" });
+        return;
       }
 
       const { page, search, status } = req.query;
@@ -683,12 +716,15 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/quotes/:quoteId", requireAuth("customer"), async (req, res) => {
+  app.get("/api/quotes/:quoteId", requireAuth(), async (req, res) => {
     try {
-      const accountCode = getAccountCode(req);
+      const accountCode = await getScopedAccountCode(req, res);
+      if (!accountCode) {
+        return;
+      }
       const { quoteId } = req.params;
 
-      const quote = await storage.getQuoteByQuoteId(quoteId, accountCode ?? undefined);
+      const quote = await storage.getQuoteByQuoteId(quoteId, accountCode);
       if (!quote) {
         return res.status(404).json({ message: "Quote not found" });
       }
@@ -771,11 +807,11 @@ export async function registerRoutes(
   // ==================== CUSTOMER EXPORT ROUTES ====================
   
   // Export all jobs as CSV
-  app.get("/api/export/jobs", requireAuth("customer"), async (req, res) => {
+  app.get("/api/export/jobs", requireAuth(), async (req, res) => {
     try {
-      const accountCode = getAccountCode(req);
+      const accountCode = await getScopedAccountCode(req, res);
       if (!accountCode) {
-        return res.status(400).json({ message: "Account code required" });
+        return;
       }
 
       const { sortBy, sortOrder } = req.query;
@@ -822,11 +858,11 @@ export async function registerRoutes(
   });
 
   // Export jobs as PDF report
-  app.get("/api/export/jobs/pdf", requireAuth("customer"), async (req, res) => {
+  app.get("/api/export/jobs/pdf", requireAuth(), async (req, res) => {
     try {
-      const accountCode = getAccountCode(req);
+      const accountCode = await getScopedAccountCode(req, res);
       if (!accountCode) {
-        return res.status(400).json({ message: "Account code required" });
+        return;
       }
 
       const { sortBy, sortOrder } = req.query;
@@ -1022,11 +1058,11 @@ export async function registerRoutes(
   });
 
   // Export all quotes as CSV
-  app.get("/api/export/quotes", requireAuth("customer"), async (req, res) => {
+  app.get("/api/export/quotes", requireAuth(), async (req, res) => {
     try {
-      const accountCode = getAccountCode(req);
+      const accountCode = await getScopedAccountCode(req, res);
       if (!accountCode) {
-        return res.status(400).json({ message: "Account code required" });
+        return;
       }
 
       // Get all quotes for this account (no pagination)
@@ -1222,7 +1258,8 @@ export async function registerRoutes(
       if (!account) {
         return res.status(404).json({ message: "Account not found" });
       }
-      res.json(account);
+      const { passwordHash, ...safeAccount } = account;
+      res.json(safeAccount);
     } catch (error) {
       console.error("Account fetch error:", error);
       res.status(500).json({ message: "Internal server error" });

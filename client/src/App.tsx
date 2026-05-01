@@ -15,7 +15,7 @@ import QuotesPage from "@/pages/quotes";
 import QuoteDetailPage from "@/pages/quote-detail";
 import AdminDashboard from "@/pages/admin/index";
 import AdminAccountsPage from "@/pages/admin/accounts";
-import AdminCustomerViewPage from "@/pages/admin/customer-view";
+import { AdminCustomerPortalRoute } from "@/pages/admin/customer-portal-route";
 import AdminSettingsPage from "@/pages/admin/settings";
 import ChangePasswordPage from "@/pages/change-password";
 import { Loader2 } from "lucide-react";
@@ -126,9 +126,39 @@ function Router() {
           <AdminAccountsPage />
         </ProtectedRoute>
       </Route>
+      <Route path="/admin/customer/:accountCode/jobs/:jobId">
+        <ProtectedRoute requiredType="admin">
+          <AdminCustomerPortalRoute>
+            <JobDetailPage />
+          </AdminCustomerPortalRoute>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/customer/:accountCode/jobs">
+        <ProtectedRoute requiredType="admin">
+          <AdminCustomerPortalRoute>
+            <JobsPage />
+          </AdminCustomerPortalRoute>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/customer/:accountCode/quotes/:quoteId">
+        <ProtectedRoute requiredType="admin">
+          <AdminCustomerPortalRoute>
+            <QuoteDetailPage />
+          </AdminCustomerPortalRoute>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/customer/:accountCode/quotes">
+        <ProtectedRoute requiredType="admin">
+          <AdminCustomerPortalRoute>
+            <QuotesPage />
+          </AdminCustomerPortalRoute>
+        </ProtectedRoute>
+      </Route>
       <Route path="/admin/customer/:accountCode">
         <ProtectedRoute requiredType="admin">
-          <AdminCustomerViewPage />
+          <AdminCustomerPortalRoute>
+            <DashboardPage />
+          </AdminCustomerPortalRoute>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/settings">

@@ -7,7 +7,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CustomerLayout } from "@/components/customer-layout";
+import { JobOverrideDialog } from "@/components/admin/job-override-dialog";
 import { StatusBadge } from "@/components/status-badge";
+import { useCustomerPortal } from "@/lib/customer-portal";
 import { format, addDays, isWeekend } from "date-fns";
 import type { Job, PurchaseOrder } from "@shared/schema";
 
@@ -120,10 +122,11 @@ function POCard({ po }: { po: PurchaseOrder }) {
 }
 
 export default function JobDetailPage() {
+  const portal = useCustomerPortal();
   const { jobId } = useParams<{ jobId: string }>();
 
   const { data, isLoading, error } = useQuery<JobDetailResponse>({
-    queryKey: ["/api/jobs", jobId],
+    queryKey: [portal.api.jobDetail(jobId), portal.accountParams],
   });
 
   if (isLoading) {
@@ -149,7 +152,7 @@ export default function JobDetailPage() {
         <div className="text-center py-16">
           <h2 className="text-xl font-semibold mb-2">Job Not Found</h2>
           <p className="text-muted-foreground mb-4">The job you're looking for doesn't exist or you don't have access.</p>
-          <Link href="/jobs">
+          <Link href={portal.routes.jobs}>
             <Button variant="outline">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Jobs
@@ -167,7 +170,7 @@ export default function JobDetailPage() {
     <CustomerLayout>
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Link href="/jobs">
+          <Link href={portal.routes.jobs}>
             <Button variant="ghost" size="icon" data-testid="button-back">
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -176,6 +179,7 @@ export default function JobDetailPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-semibold" data-testid="text-job-id">{job.jobId}</h1>
               <StatusBadge status={displayStatus} />
+              {portal.isAdminMode && <JobOverrideDialog job={job} />}
             </div>
             <p className="text-muted-foreground text-sm mt-1">{job.siteName}</p>
           </div>

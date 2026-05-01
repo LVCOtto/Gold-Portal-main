@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { CustomerLayout } from "@/components/customer-layout";
 import { StatusBadge } from "@/components/status-badge";
+import { useCustomerPortal } from "@/lib/customer-portal";
 import { format } from "date-fns";
 import type { Quote } from "@shared/schema";
 
@@ -27,13 +28,14 @@ interface QuotesResponse {
 }
 
 export default function QuotesPage() {
+  const portal = useCustomerPortal();
   const searchParams = useSearch();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(new URLSearchParams(searchParams).get("status") || "all");
 
   const { data, isLoading } = useQuery<QuotesResponse>({
-    queryKey: ["/api/quotes", { page, search, status: statusFilter }],
+    queryKey: [portal.api.quotes, portal.withAccountParams({ page, search, status: statusFilter })],
   });
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 1;
@@ -48,7 +50,7 @@ export default function QuotesPage() {
           </div>
           <Button
             variant="outline"
-            onClick={() => window.location.href = "/api/export/quotes"}
+            onClick={() => window.location.href = portal.api.exportQuotes()}
             data-testid="button-export-quotes"
           >
             <Download className="h-4 w-4 mr-2" />
@@ -127,7 +129,7 @@ export default function QuotesPage() {
                           </td>
                           <td className="py-4">
                             {quote.jobId ? (
-                              <Link href={`/jobs/${quote.jobId}`} className="text-primary hover:underline">
+                              <Link href={portal.routes.jobDetail(quote.jobId)} className="text-primary hover:underline">
                                 {quote.jobId}
                               </Link>
                             ) : (
@@ -144,7 +146,7 @@ export default function QuotesPage() {
                             £{Number(quote.grossTotal).toLocaleString("en-GB", { minimumFractionDigits: 2 })}
                           </td>
                           <td className="py-4">
-                            <Link href={`/quotes/${quote.quoteId}`}>
+                            <Link href={portal.routes.quoteDetail(quote.quoteId)}>
                               <Button variant="ghost" size="icon" data-testid={`button-view-${quote.quoteId}`}>
                                 <ArrowRight className="h-4 w-4" />
                               </Button>

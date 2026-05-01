@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CustomerLayout } from "@/components/customer-layout";
+import { JobOverrideDialog } from "@/components/admin/job-override-dialog";
 import { StatusBadge } from "@/components/status-badge";
+import { useCustomerPortal } from "@/lib/customer-portal";
 import { format, addDays, isWeekend } from "date-fns";
 import type { Job } from "@shared/schema";
 
@@ -112,6 +114,7 @@ function SortableHeader({
 }
 
 export default function JobsPage() {
+  const portal = useCustomerPortal();
   const searchParams = useSearch();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -136,7 +139,7 @@ export default function JobsPage() {
   };
 
   const { data, isLoading } = useQuery<JobsResponse>({
-    queryKey: ["/api/jobs", { page, search, status: statusFilter, sortBy, sortOrder }],
+    queryKey: [portal.api.jobs, portal.withAccountParams({ page, search, status: statusFilter, sortBy, sortOrder })],
   });
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 1;
@@ -151,7 +154,7 @@ export default function JobsPage() {
           </div>
           <Button
             variant="outline"
-            onClick={() => window.location.href = `/api/export/jobs/pdf?sortBy=${sortBy}&sortOrder=${sortOrder}`}
+            onClick={() => window.location.href = portal.api.exportJobsPdf({ sortBy, sortOrder })}
             data-testid="button-export-jobs-pdf"
           >
             <Download className="h-4 w-4 mr-2" />
@@ -291,11 +294,14 @@ export default function JobsPage() {
                               )}
                             </td>
                             <td className="py-4">
-                              <Link href={`/jobs/${job.jobId}`}>
-                                <Button variant="ghost" size="icon" data-testid={`button-view-${job.jobId}`}>
-                                  <ArrowRight className="h-4 w-4" />
-                                </Button>
-                              </Link>
+                              <div className="flex items-center justify-end gap-1">
+                                {portal.isAdminMode && <JobOverrideDialog job={job} />}
+                                <Link href={portal.routes.jobDetail(job.jobId)}>
+                                  <Button variant="ghost" size="icon" data-testid={`button-view-${job.jobId}`}>
+                                    <ArrowRight className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                              </div>
                             </td>
                           </tr>
                         );

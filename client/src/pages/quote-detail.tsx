@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CustomerLayout } from "@/components/customer-layout";
 import { StatusBadge } from "@/components/status-badge";
+import { useCustomerPortal } from "@/lib/customer-portal";
 import { format } from "date-fns";
 import type { Quote, ApprovalEvent } from "@shared/schema";
 
@@ -96,10 +97,11 @@ Best regards`;
 }
 
 export default function QuoteDetailPage() {
+  const portal = useCustomerPortal();
   const { quoteId } = useParams<{ quoteId: string }>();
 
   const { data, isLoading, error } = useQuery<QuoteDetailResponse>({
-    queryKey: ["/api/quotes", quoteId],
+    queryKey: [portal.api.quoteDetail(quoteId), portal.accountParams],
   });
 
   if (isLoading) {
@@ -124,7 +126,7 @@ export default function QuoteDetailPage() {
         <div className="text-center py-16">
           <h2 className="text-xl font-semibold mb-2">Quote Not Found</h2>
           <p className="text-muted-foreground mb-4">The quote you're looking for doesn't exist or you don't have access.</p>
-          <Link href="/quotes">
+          <Link href={portal.routes.quotes}>
             <Button variant="outline">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Quotes
@@ -143,7 +145,7 @@ export default function QuoteDetailPage() {
     <CustomerLayout>
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Link href="/quotes">
+          <Link href={portal.routes.quotes}>
             <Button variant="ghost" size="icon" data-testid="button-back">
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -155,7 +157,7 @@ export default function QuoteDetailPage() {
             </div>
             {quote.jobId && (
               <p className="text-muted-foreground text-sm mt-1">
-                Job: <Link href={`/jobs/${quote.jobId}`} className="text-primary hover:underline">
+                Job: <Link href={portal.routes.jobDetail(quote.jobId)} className="text-primary hover:underline">
                   {quote.jobId}
                 </Link>
               </p>

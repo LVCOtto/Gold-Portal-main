@@ -1,11 +1,12 @@
 import { type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, LogOut, LayoutDashboard, Briefcase, FileText, ExternalLink } from "lucide-react";
+import { ArrowLeft, Menu, LogOut, LayoutDashboard, Briefcase, FileText, ExternalLink, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ThemeToggle } from "./theme-toggle";
 import { DataCurrentBadge } from "./data-current-badge";
 import { useAuth } from "@/lib/auth";
+import { useCustomerPortal } from "@/lib/customer-portal";
 import { cn } from "@/lib/utils";
 import lvcLogo from "@assets/logo.png";
 
@@ -13,14 +14,14 @@ interface CustomerLayoutProps {
   children: ReactNode;
 }
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/jobs", label: "Jobs", icon: Briefcase },
-  { href: "/quotes", label: "Quotes", icon: FileText },
-];
-
 function NavLinks({ mobile = false, onNavigate }: { mobile?: boolean; onNavigate?: () => void }) {
   const [location] = useLocation();
+  const portal = useCustomerPortal();
+  const navItems = [
+    { href: portal.routes.dashboard, label: "Dashboard", icon: LayoutDashboard },
+    { href: portal.routes.jobs, label: "Jobs", icon: Briefcase },
+    { href: portal.routes.quotes, label: "Quotes", icon: FileText },
+  ];
 
   return (
     <>
@@ -53,6 +54,10 @@ function NavLinks({ mobile = false, onNavigate }: { mobile?: boolean; onNavigate
 
 export function CustomerLayout({ children }: CustomerLayoutProps) {
   const { user, logout } = useAuth();
+  const portal = useCustomerPortal();
+  const displayAccountName = portal.isAdminMode
+    ? portal.accountName || portal.accountCode
+    : user?.accountName;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -73,7 +78,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
                 </SheetContent>
               </Sheet>
 
-              <Link href="/dashboard" data-testid="link-logo">
+              <Link href={portal.routes.dashboard} data-testid="link-logo">
                 <img src={lvcLogo} alt="LVC UK" className="h-8" />
               </Link>
 
@@ -88,7 +93,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
               </div>
               
               <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
-                <span data-testid="text-account-name">{user?.accountName}</span>
+                <span data-testid="text-account-name">{displayAccountName}</span>
               </div>
 
               <ThemeToggle />
@@ -106,6 +111,26 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
           </div>
         </div>
       </header>
+
+      {portal.isAdminMode && (
+        <div className="border-b bg-muted/40">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Shield className="h-4 w-4 text-primary" />
+              <span>
+                Admin view: <span className="font-medium text-foreground">{displayAccountName}</span>
+                {portal.accountCode && <span> ({portal.accountCode})</span>}
+              </span>
+            </div>
+            <Link href="/admin/accounts">
+              <Button variant="ghost" size="sm" className="w-fit gap-2" data-testid="button-back-admin-accounts">
+                <ArrowLeft className="h-4 w-4" />
+                Accounts
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="sm:hidden px-4 py-2 border-b">
         <DataCurrentBadge />
