@@ -202,15 +202,14 @@ async function sendAdminOtpEmail(req: Request, code: string) {
     throw new Error("RESEND_FROM or EMAIL_FROM must be set to send admin login codes");
   }
 
-  const loginUrl = process.env.PUBLIC_APP_URL || `${req.protocol}://${req.get("host") || "localhost:5000"}`;
   const expiresInMinutes = Math.floor(ADMIN_OTP_TTL_MS / 60000);
 
   const payload: Record<string, unknown> = {
     from,
     to: [ADMIN_EMAIL],
     subject: "LVC Portal admin login code",
-    text: `Your LVC Portal admin login code is ${code}. It expires in ${expiresInMinutes} minutes.\n\nSign in: ${loginUrl}/admin/login`,
-    html: `<p>Your LVC Portal admin login code is:</p><p style="font-size:24px;letter-spacing:4px;font-weight:700;">${code}</p><p>It expires in ${expiresInMinutes} minutes.</p><p><a href="${loginUrl}/admin/login">Open admin login</a></p>`,
+    text: `Your LVC Portal admin login code is ${code}. It expires in ${expiresInMinutes} minutes.`,
+    html: `<p>Your LVC Portal admin login code is:</p><p style="font-size:24px;letter-spacing:4px;font-weight:700;">${code}</p><p>It expires in ${expiresInMinutes} minutes.</p>`,
   };
   if (process.env.RESEND_REPLY_TO) payload.reply_to = process.env.RESEND_REPLY_TO;
 
