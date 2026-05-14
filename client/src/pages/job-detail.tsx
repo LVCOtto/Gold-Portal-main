@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CustomerLayout } from "@/components/customer-layout";
 import { JobOverrideDialog } from "@/components/admin/job-override-dialog";
+import { JobStatusFlow } from "@/components/job-status-flow";
 import { StatusBadge } from "@/components/status-badge";
 import { useCustomerPortal } from "@/lib/customer-portal";
 import { format, addDays, isWeekend } from "date-fns";
@@ -134,6 +135,7 @@ export default function JobDetailPage() {
       <CustomerLayout>
         <div className="space-y-6">
           <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-36 w-full" />
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               <Skeleton className="h-64 w-full" />
@@ -184,6 +186,13 @@ export default function JobDetailPage() {
             <p className="text-muted-foreground text-sm mt-1">{job.siteName}</p>
           </div>
         </div>
+
+        <JobStatusFlow
+          status={displayStatus}
+          upcomingDate={job.upcomingDate}
+          upcomingDateType={job.upcomingDateType}
+          lastUpdatedDate={job.lastUpdatedDate}
+        />
 
         {job.adminNotes && (
           <Alert>
