@@ -3,17 +3,17 @@ import {
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
-  Clock3,
+  FileText,
   PackageSearch,
-  ShieldCheck,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type JobFlowStageId = "logged" | "scheduled" | "visit" | "parts" | "finalising" | "complete";
+type JobFlowStageId = "logged" | "booked" | "quoted" | "awaiting_parts" | "to_be_booked" | "attended";
 type JobFlowTone = "standard" | "complete" | "paused" | "blocked";
+type JobFlowVariant = "breakdown" | "callback";
 
 interface JobFlowStage {
   id: JobFlowStageId;
@@ -24,55 +24,71 @@ interface JobFlowStage {
 
 interface JobStatusFlowProps {
   status: string;
+  jobDescription?: string | null;
   upcomingDate?: string | Date | null;
   upcomingDateType?: "parts" | "visit" | null;
   lastUpdatedDate?: string | Date | null;
   className?: string;
 }
 
-const JOB_FLOW_STAGES: JobFlowStage[] = [
+const BREAKDOWN_FLOW_STAGES: JobFlowStage[] = [
   {
     id: "logged",
-    label: "Logged",
+    label: "LOGGED",
     description: "Job received",
     icon: ClipboardCheck,
   },
   {
-    id: "scheduled",
-    label: "Scheduled",
-    description: "Visit arranged",
+    id: "booked",
+    label: "BOOKED",
+    description: "Visit booked",
     icon: CalendarClock,
   },
   {
-    id: "visit",
-    label: "Visit / Repair",
-    description: "Engineer activity",
+    id: "attended",
+    label: "ATTENDED",
+    description: "Engineer attended",
     icon: Wrench,
-  },
-  {
-    id: "parts",
-    label: "Parts / Approval",
-    description: "Waiting on supply or sign-off",
-    icon: PackageSearch,
-  },
-  {
-    id: "finalising",
-    label: "Finalising",
-    description: "Close-out checks",
-    icon: Clock3,
-  },
-  {
-    id: "complete",
-    label: "Complete",
-    description: "Closed or invoiced",
-    icon: ShieldCheck,
   },
 ];
 
-const STAGE_INDEX = JOB_FLOW_STAGES.reduce<Record<JobFlowStageId, number>>((index, stage, stageIndex) => {
-  index[stage.id] = stageIndex;
-  return index;
-}, {} as Record<JobFlowStageId, number>);
+const CALLBACK_FLOW_STAGES: JobFlowStage[] = [
+  {
+    id: "logged",
+    label: "LOGGED",
+    description: "Job received",
+    icon: ClipboardCheck,
+  },
+  {
+    id: "quoted",
+    label: "QUOTED",
+    description: "Quote issued",
+    icon: FileText,
+  },
+  {
+    id: "awaiting_parts",
+    label: "AWAITING PARTS",
+    description: "Parts on order",
+    icon: PackageSearch,
+  },
+  {
+    id: "to_be_booked",
+    label: "TO BE BOOKED",
+    description: "Next visit to arrange",
+    icon: CalendarClock,
+  },
+  {
+    id: "attended",
+    label: "ATTENDED",
+    description: "Engineer attended",
+    icon: Wrench,
+  },
+];
+
+const FLOW_STAGES: Record<JobFlowVariant, JobFlowStage[]> = {
+  breakdown: BREAKDOWN_FLOW_STAGES,
+  callback: CALLBACK_FLOW_STAGES,
+};
 
 function normalizeStatus(status: string) {
   return status
@@ -82,7 +98,12 @@ function normalizeStatus(status: string) {
     .trim();
 }
 
-function getFlowState(status: string): { stageId: JobFlowStageId; tone: JobFlowTone } {
+function getFlowVariant(jobDescription?: string | null): JobFlowVariant {
+  const normalized = normalizeStatus(jobDescription ?? "");
+  return normalized.includes("breakdown") ? "breakdown" : "callback";
+}
+
+function getFlowState(status: string, variant: JobFlowVariant): { stageId: JobFlowStageId; tone: JobFlowTone } {
   const normalized = normalizeStatus(status);
 
   if (!normalized || normalized === "unknown") {
@@ -94,27 +115,43 @@ function getFlowState(status: string): { stageId: JobFlowStageId; tone: JobFlowT
   }
 
   if (/hold|delay/.test(normalized)) {
-    return { stageId: "scheduled", tone: "paused" };
+    return { stageId: variant === "breakdown" ? "booked" : "to_be_booked", tone: "paused" };
   }
 
   if (/complete|closed|invoiced/.test(normalized)) {
-    return { stageId: "complete", tone: "complete" };
+    return { stageId: "attended", tone: "complete" };
   }
 
-  if (/attended.*processing|awaiting complete|finalis|close out/.test(normalized)) {
-    return { stageId: "finalising", tone: "standard" };
+  if (variant === "breakdown") {
+    if (/attended|site attended|awaiting complete|finalis|close out|work in progress|repair|awaiting parts|parts ordered|parts on order|quote|approval/.test(normalized)) {
+      return { stageId: "attended", tone: "standard" };
+    }
+
+    if (/booked|pending engineer|pending visit|scheduled/.test(normalized)) {
+      return { stageId: "booked", tone: "standard" };
+    }
+
+    return { stageId: "logged", tone: "standard" };
   }
 
-  if (/awaiting parts|parts ordered|parts on order|quote|approval/.test(normalized)) {
-    return { stageId: "parts", tone: "standard" };
+  if (/awaiting parts|parts ordered|parts on order/.test(normalized)) {
+    return { stageId: "awaiting_parts", tone: "standard" };
   }
 
-  if (/attended|site attended|work in progress|engineer assigned|workshop repair|repair/.test(normalized)) {
-    return { stageId: "visit", tone: "standard" };
+  if (/quote|approval/.test(normalized)) {
+    return { stageId: "quoted", tone: "standard" };
   }
 
-  if (/pending engineer|pending visit|scheduled|waiting acceptance|accepted/.test(normalized)) {
-    return { stageId: "scheduled", tone: "standard" };
+  if (/booked|pending engineer|pending visit|scheduled|to be booked|approved pending internal processing|approved/.test(normalized)) {
+    return { stageId: "to_be_booked", tone: "standard" };
+  }
+
+  if (/attended|site attended|attended.*processing|awaiting complete|finalis|close out|work in progress|workshop repair|repair/.test(normalized)) {
+    return { stageId: "attended", tone: "standard" };
+  }
+
+  if (/waiting acceptance|accepted|open|new|logged/.test(normalized)) {
+    return { stageId: "logged", tone: "standard" };
   }
 
   return { stageId: "logged", tone: "standard" };
@@ -141,6 +178,7 @@ function formatOptionalDate(date: string | Date | null | undefined) {
 function getStatusSummary(
   stageId: JobFlowStageId,
   tone: JobFlowTone,
+  variant: JobFlowVariant,
   upcomingDate?: string | Date | null,
   upcomingDateType?: "parts" | "visit" | null,
 ) {
@@ -164,17 +202,17 @@ function getStatusSummary(
 
   switch (stageId) {
     case "logged":
-      return "The job has been received and is being prepared for the next action.";
-    case "scheduled":
-      return "An engineer visit is being arranged or is already scheduled.";
-    case "visit":
-      return "Engineer activity is underway or has recently taken place.";
-    case "parts":
-      return "The job is waiting on parts, supply progress, or approval before continuing.";
-    case "finalising":
-      return "The completed work is being processed before the job is closed.";
-    case "complete":
-      return "The job has been completed, closed, or invoiced.";
+      return "The job has been logged and is waiting for the next action.";
+    case "booked":
+      return "The breakdown visit has been booked.";
+    case "quoted":
+      return "A quote has been issued or is awaiting approval.";
+    case "awaiting_parts":
+      return "Parts are on order or being awaited.";
+    case "to_be_booked":
+      return variant === "breakdown" ? "The visit has been booked." : "The next visit needs to be booked.";
+    case "attended":
+      return "The engineer has attended or the job is being closed out.";
   }
 }
 
@@ -212,18 +250,21 @@ function getToneClasses(tone: JobFlowTone) {
 
 export function JobStatusFlow({
   status,
+  jobDescription,
   upcomingDate,
   upcomingDateType,
   lastUpdatedDate,
   className,
 }: JobStatusFlowProps) {
-  const flowState = getFlowState(status);
-  const activeIndex = STAGE_INDEX[flowState.stageId];
+  const flowVariant = getFlowVariant(jobDescription);
+  const stages = FLOW_STAGES[flowVariant];
+  const flowState = getFlowState(status, flowVariant);
+  const activeIndex = Math.max(stages.findIndex((stage) => stage.id === flowState.stageId), 0);
   const toneClasses = getToneClasses(flowState.tone);
-  const currentStage = JOB_FLOW_STAGES[activeIndex];
-  const progressPercent = (activeIndex / (JOB_FLOW_STAGES.length - 1)) * 100;
+  const currentStage = stages[activeIndex];
+  const progressPercent = (activeIndex / (stages.length - 1)) * 100;
   const updatedDate = formatOptionalDate(lastUpdatedDate);
-  const statusSummary = getStatusSummary(flowState.stageId, flowState.tone, upcomingDate, upcomingDateType);
+  const statusSummary = getStatusSummary(flowState.stageId, flowState.tone, flowVariant, upcomingDate, upcomingDateType);
 
   return (
     <section
@@ -237,6 +278,9 @@ export function JobStatusFlow({
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Job Progress</h2>
             <Badge variant="outline" className={cn("hover:no-default-hover-elevate", toneClasses.badge)}>
               {currentStage.label}
+            </Badge>
+            <Badge variant="outline" className="bg-background text-muted-foreground hover:no-default-hover-elevate">
+              {flowVariant === "breakdown" ? "Breakdown" : "Callback"}
             </Badge>
           </div>
           <p className="text-base font-medium text-foreground">Current status: {formatStatusLabel(status)}</p>
@@ -255,8 +299,14 @@ export function JobStatusFlow({
         </div>
 
         <div className="mt-4 overflow-x-auto pb-1">
-          <ol className="grid min-w-[760px] grid-cols-6 gap-0" aria-label="Standard job stages">
-            {JOB_FLOW_STAGES.map((stage, index) => {
+          <ol
+            className={cn(
+              "grid gap-0",
+              flowVariant === "breakdown" ? "min-w-[420px] grid-cols-3" : "min-w-[680px] grid-cols-5",
+            )}
+            aria-label="Standard job stages"
+          >
+            {stages.map((stage, index) => {
               const isCurrent = index === activeIndex;
               const isComplete = index < activeIndex || (flowState.tone === "complete" && index === activeIndex);
               const isConnectorComplete = index < activeIndex;
@@ -264,7 +314,7 @@ export function JobStatusFlow({
 
               return (
                 <li key={stage.id} className="relative flex flex-col items-center px-2 text-center">
-                  {index < JOB_FLOW_STAGES.length - 1 && (
+                  {index < stages.length - 1 && (
                     <div
                       className={cn(
                         "absolute left-[calc(50%+1.25rem)] right-[calc(-50%+1.25rem)] top-5 h-px",

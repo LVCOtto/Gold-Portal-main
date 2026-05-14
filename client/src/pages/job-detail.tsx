@@ -189,6 +189,7 @@ export default function JobDetailPage() {
 
         <JobStatusFlow
           status={displayStatus}
+          jobDescription={job.shortDescription}
           upcomingDate={job.upcomingDate}
           upcomingDateType={job.upcomingDateType}
           lastUpdatedDate={job.lastUpdatedDate}
