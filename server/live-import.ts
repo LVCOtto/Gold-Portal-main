@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
+import { Readable } from "stream";
 import bcrypt from "bcryptjs";
+import { GetObjectCommand, HeadObjectCommand, S3Client, type GetObjectCommandOutput } from "@aws-sdk/client-s3";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { parse as dateFnsParse, isValid as isValidDate } from "date-fns";
@@ -8,12 +10,73 @@ import { storage } from "./storage";
 
 const DEFAULT_LIVE_JOBS_PATH = "T:\\LVC General\\LVC Staff\\Otto\\Exports\\Job Live Status Hub.csv";
 const liveJobsPath = process.env.AUTO_IMPORT_JOBS_PATH || DEFAULT_LIVE_JOBS_PATH;
+const autoImportSource = (process.env.AUTO_IMPORT_SOURCE || (process.env.AUTO_IMPORT_R2_BUCKET ? "r2" : "file")).toLowerCase();
 const autoImportEnabled = process.env.AUTO_IMPORT_ENABLED !== "false";
 const autoImportIntervalMs = Math.max(Number.parseInt(process.env.AUTO_IMPORT_INTERVAL_MS || "60000", 10) || 60000, 15000);
+
+const r2Endpoint = process.env.AUTO_IMPORT_R2_ENDPOINT;
+const r2Bucket = process.env.AUTO_IMPORT_R2_BUCKET;
+const r2Key = process.env.AUTO_IMPORT_R2_KEY;
+const r2AccessKeyId = process.env.AUTO_IMPORT_R2_ACCESS_KEY_ID;
+const r2SecretAccessKey = process.env.AUTO_IMPORT_R2_SECRET_ACCESS_KEY;
+const r2Region = process.env.AUTO_IMPORT_R2_REGION || "auto";
 
 let lastSeenSignature: string | null = null;
 let isImportRunning = false;
 let hasLoggedMissingFile = false;
+
+function formatImportError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "Unknown error";
+  }
+
+  const detail = error as Error & {
+    Code?: unknown;
+    code?: unknown;
+    $metadata?: {
+      httpStatusCode?: number;
+      requestId?: string;
+      extendedRequestId?: string;
+    };
+  };
+  const parts = [detail.name || "Error"];
+
+  if (detail.message && detail.message !== detail.name) {
+    parts.push(detail.message);
+  }
+  if (detail.Code) {
+    parts.push(`code=${String(detail.Code)}`);
+  } else if (detail.code) {
+    parts.push(`code=${String(detail.code)}`);
+  }
+  if (detail.$metadata?.httpStatusCode) {
+    parts.push(`status=${detail.$metadata.httpStatusCode}`);
+  }
+  if (detail.$metadata?.requestId) {
+    parts.push(`requestId=${detail.$metadata.requestId}`);
+  }
+  if (detail.$metadata?.extendedRequestId) {
+    parts.push(`extendedRequestId=${detail.$metadata.extendedRequestId}`);
+  }
+
+  return parts.join(" | ");
+}
+
+function createR2Client(): S3Client {
+  if (!r2Endpoint || !r2AccessKeyId || !r2SecretAccessKey) {
+    throw new Error("R2 import is missing endpoint or credentials");
+  }
+
+  return new S3Client({
+    region: r2Region,
+    endpoint: r2Endpoint,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: r2AccessKeyId,
+      secretAccessKey: r2SecretAccessKey,
+    },
+  });
+}
 
 function excelSerialToDate(serial: number): Date {
   const excelEpoch = new Date(1899, 11, 30);
@@ -75,18 +138,48 @@ function getCol(row: Record<string, unknown>, ...names: string[]): unknown {
   return null;
 }
 
-async function parseFileData(filePath: string): Promise<Record<string, unknown>[]> {
-  const ext = path.extname(filePath).toLowerCase();
+async function responseBodyToBuffer(body: GetObjectCommandOutput["Body"]): Promise<Buffer> {
+  if (!body) {
+    return Buffer.alloc(0);
+  }
 
-  if (ext === ".xlsx") {
-    const buffer = await fs.promises.readFile(filePath);
+  if (body instanceof Uint8Array) {
+    return Buffer.from(body);
+  }
+
+  const transformBody = body as { transformToByteArray?: () => Promise<Uint8Array>; arrayBuffer?: () => Promise<ArrayBuffer> };
+  if (typeof transformBody.transformToByteArray === "function") {
+    return Buffer.from(await transformBody.transformToByteArray());
+  }
+  if (typeof transformBody.arrayBuffer === "function") {
+    return Buffer.from(await transformBody.arrayBuffer());
+  }
+
+  if (body instanceof Readable) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of body) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
+  throw new Error("Unsupported R2 response body");
+}
+
+function sourceFileName(sourceName: string): string {
+  return path.basename(sourceName.replace(/\\/g, "/"));
+}
+
+async function parseBufferData(buffer: Buffer, sourceName: string): Promise<Record<string, unknown>[]> {
+  const ext = path.extname(sourceName).toLowerCase();
+
+  if (ext === ".xlsx" || ext === ".xls") {
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
     const sheetName = workbook.SheetNames[0];
     return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, dateNF: "dd/mm/yyyy" }) as Record<string, unknown>[];
   }
 
   let csvText: string;
-  const buffer = await fs.promises.readFile(filePath);
 
   try {
     csvText = buffer.toString("utf-8");
@@ -104,8 +197,34 @@ async function parseFileData(filePath: string): Promise<Record<string, unknown>[
   return parsed.data as Record<string, unknown>[];
 }
 
-async function importJobsFromLiveFile(filePath: string) {
-  const data = await parseFileData(filePath);
+async function parseFileData(filePath: string): Promise<Record<string, unknown>[]> {
+  const buffer = await fs.promises.readFile(filePath);
+  return parseBufferData(buffer, filePath);
+}
+
+async function fetchR2Object(client: S3Client): Promise<{ data: Record<string, unknown>[]; sourceName: string }> {
+  if (!r2Bucket || !r2Key) {
+    throw new Error("R2 import is missing bucket or object key");
+  }
+
+  const response = await client.send(new GetObjectCommand({ Bucket: r2Bucket, Key: r2Key }));
+  const buffer = await responseBodyToBuffer(response.Body);
+  return {
+    data: await parseBufferData(buffer, r2Key),
+    sourceName: `r2://${r2Bucket}/${r2Key}`,
+  };
+}
+
+async function getR2Signature(client: S3Client): Promise<string> {
+  if (!r2Bucket || !r2Key) {
+    throw new Error("R2 import is missing bucket or object key");
+  }
+
+  const head = await client.send(new HeadObjectCommand({ Bucket: r2Bucket, Key: r2Key }));
+  return `${head.ETag || "no-etag"}:${head.LastModified?.getTime() || "no-mtime"}:${head.ContentLength || 0}`;
+}
+
+async function importJobsFromLiveData(data: Record<string, unknown>[], sourceName: string) {
 
   if (data.length === 0) {
     throw new Error("No data rows found in live import file");
@@ -235,12 +354,12 @@ async function importJobsFromLiveFile(filePath: string) {
   }
 
   await storage.setSystemSetting("last_import", new Date().toISOString());
-  await storage.setSystemSetting("last_import_source", filePath);
+  await storage.setSystemSetting("last_import_source", sourceName);
 
   await storage.createImportBatch({
     importedBy: "auto-import",
     fileType: "jobs",
-    fileName: path.basename(filePath),
+    fileName: sourceFileName(sourceName),
     rowCount: jobsToInsert.length,
     errorCount: errors.length,
     errors: errors.length > 0 ? JSON.stringify(errors.slice(0, 50)) : null,
@@ -254,9 +373,60 @@ async function importJobsFromLiveFile(filePath: string) {
   };
 }
 
+async function importJobsFromLiveFile(filePath: string) {
+  return importJobsFromLiveData(await parseFileData(filePath), filePath);
+}
+
 export function startLiveJobsAutoImport(log: (message: string, source?: string) => void) {
   if (!autoImportEnabled) {
     log("live jobs auto-import disabled by AUTO_IMPORT_ENABLED=false", "live-import");
+    return;
+  }
+
+  if (autoImportSource === "r2") {
+    const missing = [
+      ["AUTO_IMPORT_R2_ENDPOINT", r2Endpoint],
+      ["AUTO_IMPORT_R2_BUCKET", r2Bucket],
+      ["AUTO_IMPORT_R2_KEY", r2Key],
+      ["AUTO_IMPORT_R2_ACCESS_KEY_ID", r2AccessKeyId],
+      ["AUTO_IMPORT_R2_SECRET_ACCESS_KEY", r2SecretAccessKey],
+    ]
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+
+    if (missing.length > 0) {
+      log(`live jobs R2 auto-import not configured; missing ${missing.join(", ")}`, "live-import");
+      return;
+    }
+
+    const client = createR2Client();
+    const checkForUpdates = async (force = false) => {
+      if (isImportRunning) return;
+
+      try {
+        const signature = await getR2Signature(client);
+
+        if (!force && signature === lastSeenSignature) {
+          return;
+        }
+
+        isImportRunning = true;
+        const { data, sourceName } = await fetchR2Object(client);
+        const result = await importJobsFromLiveData(data, sourceName);
+        lastSeenSignature = signature;
+        log(`live jobs R2 import complete: ${result.jobsImported} jobs, ${result.errorCount} errors`, "live-import");
+      } catch (error) {
+        log(`live jobs R2 import failed: ${formatImportError(error)}`, "live-import");
+      } finally {
+        isImportRunning = false;
+      }
+    };
+
+    log(`watching live jobs R2 object ${r2Bucket}/${r2Key}`, "live-import");
+    void checkForUpdates(true);
+    setInterval(() => {
+      void checkForUpdates(false);
+    }, autoImportIntervalMs);
     return;
   }
 
@@ -285,7 +455,7 @@ export function startLiveJobsAutoImport(log: (message: string, source?: string) 
       lastSeenSignature = signature;
       log(`live jobs import complete: ${result.jobsImported} jobs, ${result.errorCount} errors`, "live-import");
     } catch (error) {
-      log(`live jobs import failed: ${error instanceof Error ? error.message : "Unknown error"}`, "live-import");
+      log(`live jobs import failed: ${formatImportError(error)}`, "live-import");
     } finally {
       isImportRunning = false;
     }

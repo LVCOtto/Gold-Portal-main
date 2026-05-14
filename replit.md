@@ -176,4 +176,12 @@ shared/
 - `PUBLIC_APP_URL`: Public portal URL used in OTP emails
 - `ADMIN_ALLOWED_IPS`: Comma-separated list of allowed IPs for admin login (optional, use `*` to allow all)
 - `AUTO_IMPORT_ENABLED`: Set to `false` in cloud deployments without local file system access
+- `AUTO_IMPORT_SOURCE`: Set to `r2` to import jobs from a Cloudflare R2/S3-compatible object instead of a local path
+- `AUTO_IMPORT_INTERVAL_MS`: Polling interval for the live jobs import; defaults to `60000` and is clamped to at least 15 seconds
+- `AUTO_IMPORT_R2_ENDPOINT`: Cloudflare R2 S3 API endpoint, e.g. `https://<account-id>.r2.cloudflarestorage.com`
+- `AUTO_IMPORT_R2_BUCKET`: Private R2 bucket containing the live jobs CSV/XLSX
+- `AUTO_IMPORT_R2_KEY`: Object key for the live jobs file, e.g. `jobs/job-live-status-hub.csv`
+- `AUTO_IMPORT_R2_ACCESS_KEY_ID`: Read-only R2 access key used by Railway
+- `AUTO_IMPORT_R2_SECRET_ACCESS_KEY`: Read-only R2 secret used by Railway
+- `AUTO_IMPORT_R2_REGION`: Optional R2 region; defaults to `auto`
 - `FORCE_HTTPS`: Set to `true` in production to redirect HTTP requests to HTTPS
