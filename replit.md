@@ -13,7 +13,7 @@ The application serves two user types:
 All credentials are managed in the deployment platform (Railway).
 Customer accounts created by import receive a randomly generated password
 that must be reset by an admin before first use.
-Admin password is configured via the `ADMIN_PASSWORD` environment variable.
+Admin access is restricted to `otto@lvcuk.com` using a 6-digit email OTP.
 
 ## User Preferences
 
@@ -42,7 +42,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Authentication & Security
 - **Customer Auth**: Account code + hashed password (bcryptjs)
-- **Admin Auth**: Single password via `ADMIN_PASSWORD` environment variable
+- **Admin Auth**: 6-digit OTP emailed to `otto@lvcuk.com`
 - **Session Storage**: Cookie-based sessions with httpOnly, sameSite, and secure flags
 - **Rate Limiting**: Login endpoints limited to 5 failed attempts per 15 minutes per IP
 - **API Rate Limiting**: General limit of 100 requests per minute per IP
@@ -168,8 +168,12 @@ shared/
 
 ## Environment Variables Required
 - `DATABASE_URL`: PostgreSQL connection string (required)
-- `ADMIN_PASSWORD`: Strong random password for admin access (required, 16+ chars)
 - `SESSION_SECRET`: 32+ char random secret for session signing (required, server refuses to start without it)
+- `ADMIN_EMAIL`: Admin OTP mailbox; defaults to `otto@lvcuk.com`
+- `RESEND_API_KEY`: Resend API key for admin OTP email delivery
+- `RESEND_FROM` or `EMAIL_FROM`: Verified Resend sender address for admin OTP emails
+- `RESEND_REPLY_TO`: Optional reply-to address for admin OTP emails
+- `PUBLIC_APP_URL`: Public portal URL used in OTP emails
 - `ADMIN_ALLOWED_IPS`: Comma-separated list of allowed IPs for admin login (optional, use `*` to allow all)
 - `AUTO_IMPORT_ENABLED`: Set to `false` in cloud deployments without local file system access
 - `FORCE_HTTPS`: Set to `true` in production to redirect HTTP requests to HTTPS

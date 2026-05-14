@@ -4,6 +4,7 @@ import { apiRequest, queryClient } from "./queryClient";
 
 interface User {
   type: "customer" | "admin";
+  email?: string;
   accountCode?: string;
   accountName?: string;
   mustChangePassword?: boolean;
@@ -13,7 +14,9 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   mustChangePassword: boolean;
-  login: (type: "customer" | "admin", credentials: { accountCode?: string; password: string }) => Promise<void>;
+  login: (type: "customer", credentials: { accountCode?: string; password: string }) => Promise<void>;
+  requestAdminOtp: () => Promise<void>;
+  verifyAdminOtp: (code: string) => Promise<void>;
   logout: () => Promise<void>;
   clearMustChangePassword: () => void;
 }
@@ -45,14 +48,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function login(type: "customer" | "admin", credentials: { accountCode?: string; password: string }) {
-    const endpoint = type === "admin" ? "/api/auth/admin/login" : "/api/auth/customer/login";
-    const response = await apiRequest("POST", endpoint, credentials);
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || "Login failed");
-    }
+  async function login(_type: "customer", credentials: { accountCode?: string; password: string }) {
+    const response = await apiRequest("POST", "/api/auth/customer/login", credentials);
 
     const data = await response.json();
     setUser(data.user);
@@ -62,7 +59,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     setMustChangePassword(false);
-    setLocation(type === "admin" ? "/admin" : "/dashboard");
+    setLocation("/dashboard");
+  }
+
+  async function requestAdminOtp() {
+    await apiRequest("POST", "/api/auth/admin/request-otp");
+  }
+
+  async function verifyAdminOtp(code: string) {
+    const response = await apiRequest("POST", "/api/auth/admin/verify-otp", { code });
+    const data = await response.json();
+    queryClient.clear();
+    setUser(data.user);
+    setMustChangePassword(false);
+    setLocation("/admin");
   }
 
   async function logout() {
@@ -82,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, mustChangePassword, login, logout, clearMustChangePassword }}>
+    <AuthContext.Provider value={{ user, isLoading, mustChangePassword, login, requestAdminOtp, verifyAdminOtp, logout, clearMustChangePassword }}>
       {children}
     </AuthContext.Provider>
   );

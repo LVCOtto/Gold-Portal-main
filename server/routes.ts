@@ -83,9 +83,19 @@ declare module "express-session" {
   interface SessionData {
     user?: {
       type: "customer" | "admin";
+      email?: string;
       accountCode?: string;
       accountName?: string;
       mustChangePassword?: boolean;
+    };
+    adminOtp?: {
+      email: string;
+      codeHash: string;
+      expiresAt: number;
+      attempts: number;
+      sentAt: number;
+      requestIp: string;
+      userAgent?: string;
     };
   }
 }
@@ -149,6 +159,88 @@ function safeStringEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ab, bb);
 }
 
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "otto@lvcuk.com").trim().toLowerCase();
+const ADMIN_OTP_TTL_MS = 10 * 60 * 1000;
+const ADMIN_OTP_MAX_ATTEMPTS = 5;
+
+function adminOtpLockoutKey(): string {
+  return lockoutKey("admin", ADMIN_EMAIL);
+}
+
+function generateAdminOtp(): string {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+}
+
+function hashAdminOtp(sessionId: string, code: string): string {
+  return crypto
+    .createHmac("sha256", process.env.SESSION_SECRET || "")
+    .update(`${ADMIN_EMAIL}:${sessionId}:${code}`)
+    .digest("hex");
+}
+
+function isAdminIpAllowed(req: Request): boolean {
+  const allowedIPs = process.env.ADMIN_ALLOWED_IPS;
+  if (!allowedIPs) return true;
+
+  const ip = clientIp(req);
+  const ipList = allowedIPs.split(",").map((p) => p.trim()).filter(Boolean);
+  return (
+    ipList.includes("*") ||
+    ipList.includes(ip) ||
+    ipList.includes(`::ffff:${ip}`) ||
+    ipList.some((p) => p.startsWith("::ffff:") && p.substring(7) === ip)
+  );
+}
+
+async function sendAdminOtpEmail(req: Request, code: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM || process.env.EMAIL_FROM;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY must be set to send admin login codes");
+  }
+  if (!from) {
+    throw new Error("RESEND_FROM or EMAIL_FROM must be set to send admin login codes");
+  }
+
+  const loginUrl = process.env.PUBLIC_APP_URL || `${req.protocol}://${req.get("host") || "localhost:5000"}`;
+  const expiresInMinutes = Math.floor(ADMIN_OTP_TTL_MS / 60000);
+
+  const payload: Record<string, unknown> = {
+    from,
+    to: [ADMIN_EMAIL],
+    subject: "LVC Portal admin login code",
+    text: `Your LVC Portal admin login code is ${code}. It expires in ${expiresInMinutes} minutes.\n\nSign in: ${loginUrl}/admin/login`,
+    html: `<p>Your LVC Portal admin login code is:</p><p style="font-size:24px;letter-spacing:4px;font-weight:700;">${code}</p><p>It expires in ${expiresInMinutes} minutes.</p><p><a href="${loginUrl}/admin/login">Open admin login</a></p>`,
+  };
+  if (process.env.RESEND_REPLY_TO) payload.reply_to = process.env.RESEND_REPLY_TO;
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Resend email delivery failed (${response.status})${body ? `: ${body.slice(0, 300)}` : ""}`);
+  }
+}
+
+function saveSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.save((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+function regenerateSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => (err ? reject(err) : resolve()));
+  });
+}
+
 function generateTempPassword(): string {
   // 18 random bytes → 24 url-safe chars. Mix in a digit/symbol guarantee for policy compliance.
   const base = crypto.randomBytes(18).toString("base64url");
@@ -206,11 +298,10 @@ function getRequestOrigin(req: Request): string {
 function requireSameOriginHeader(req: Request, res: Response, next: NextFunction) {
   const method = req.method.toUpperCase();
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
-  // Login endpoints are exempt (no cookie yet, and require credentials anyway).
+  // Customer login is exempt (no cookie yet, and requires credentials anyway).
   // Upload endpoints are also exempt; they're protected by requireAuth("admin") already.
   const exempt = [
     "/api/auth/customer/login",
-    "/api/auth/admin/login",
     "/api/health",
     "/api/admin/imports",
     "/api/admin/import-replace",
@@ -459,55 +550,112 @@ export async function registerRoutes(
     }
   });
 
-  // Admin login (with rate limiting and IP allowlist)
-  app.post("/api/auth/admin/login", loginRateLimiter, async (req, res) => {
+  const adminOtpRequestLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 3,
+    message: { message: "Too many code requests. Please try again in 15 minutes." },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Admin login: email a one-time 6 digit code to the sole admin mailbox.
+  app.post("/api/auth/admin/request-otp", adminOtpRequestLimiter, async (req, res) => {
     try {
-      const { password } = req.body || {};
-      const adminPassword = process.env.ADMIN_PASSWORD;
-      const allowedIPs = process.env.ADMIN_ALLOWED_IPS;
-      const ip = clientIp(req);
-
-      if (typeof password !== "string" || !password || password.length > 256) {
-        return res.status(400).json({ message: "Password required" });
+      if (!isAdminIpAllowed(req)) {
+        await audit(req, "admin.otp.blocked_ip", { actorType: "admin", actorId: ADMIN_EMAIL });
+        return res.status(403).json({ message: "Access denied from this location" });
       }
 
-      // Check IP allowlist if configured
-      if (allowedIPs) {
-        const ipList = allowedIPs.split(',').map(p => p.trim());
-        const isAllowed = ipList.includes('*') ||
-                          ipList.includes(ip) ||
-                          ipList.includes(`::ffff:${ip}`) ||
-                          ipList.some(p => p.startsWith('::ffff:') && p.substring(7) === ip);
-        if (!isAllowed) {
-          await audit(req, "admin.login.blocked_ip", { actorType: "admin", actorId: "admin" });
-          return res.status(403).json({ message: "Access denied from this location" });
-        }
-      }
-
-      if (!adminPassword || adminPassword.length < 16) {
-        return res.status(500).json({ message: "Admin password not configured" });
-      }
-
-      const key = lockoutKey("admin", "admin");
+      const key = adminOtpLockoutKey();
       const lockedFor = isLockedOut(key);
       if (lockedFor > 0) {
         return res.status(429).json({ message: `Admin login locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
       }
 
-      if (!safeStringEqual(password, adminPassword)) {
+      const code = generateAdminOtp();
+      req.session.adminOtp = {
+        email: ADMIN_EMAIL,
+        codeHash: hashAdminOtp(req.sessionID, code),
+        expiresAt: Date.now() + ADMIN_OTP_TTL_MS,
+        attempts: 0,
+        sentAt: Date.now(),
+        requestIp: clientIp(req),
+        userAgent: (req.headers["user-agent"] as string | undefined) || undefined,
+      };
+
+      try {
+        await sendAdminOtpEmail(req, code);
+      } catch (error) {
+        delete req.session.adminOtp;
+        console.error("Admin OTP email error:", error);
+        return res.status(500).json({ message: "Admin login email is not configured" });
+      }
+
+      await audit(req, "admin.otp.requested", { actorType: "admin", actorId: ADMIN_EMAIL });
+      res.json({ message: "Code sent", email: ADMIN_EMAIL, expiresInSeconds: ADMIN_OTP_TTL_MS / 1000 });
+    } catch (error) {
+      console.error("Admin OTP request error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/admin/verify-otp", loginRateLimiter, async (req, res) => {
+    try {
+      if (!isAdminIpAllowed(req)) {
+        await audit(req, "admin.otp.blocked_ip", { actorType: "admin", actorId: ADMIN_EMAIL });
+        return res.status(403).json({ message: "Access denied from this location" });
+      }
+
+      const parsed = z.object({ code: z.string().regex(/^\d{6}$/, "Enter the 6 digit code") }).safeParse(req.body || {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid code" });
+      }
+
+      const key = adminOtpLockoutKey();
+      const lockedFor = isLockedOut(key);
+      if (lockedFor > 0) {
+        return res.status(429).json({ message: `Admin login locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
+      }
+
+      const challenge = req.session.adminOtp;
+      if (!challenge || challenge.email !== ADMIN_EMAIL) {
+        return res.status(400).json({ message: "Request a new login code" });
+      }
+
+      if (challenge.expiresAt <= Date.now()) {
+        delete req.session.adminOtp;
+        return res.status(401).json({ message: "Login code expired" });
+      }
+
+      if (challenge.attempts >= ADMIN_OTP_MAX_ATTEMPTS) {
+        delete req.session.adminOtp;
         recordFailure(key);
-        await audit(req, "admin.login.failure", { actorType: "admin", actorId: "admin" });
-        return res.status(401).json({ message: "Invalid password" });
+        await audit(req, "admin.otp.too_many_attempts", { actorType: "admin", actorId: ADMIN_EMAIL });
+        return res.status(429).json({ message: "Too many incorrect codes. Request a new login code." });
+      }
+
+      const expectedHash = hashAdminOtp(req.sessionID, parsed.data.code);
+      if (!safeStringEqual(expectedHash, challenge.codeHash)) {
+        req.session.adminOtp = { ...challenge, attempts: challenge.attempts + 1 };
+        recordFailure(key);
+        await audit(req, "admin.otp.failure", { actorType: "admin", actorId: ADMIN_EMAIL });
+        return res.status(401).json({ message: "Invalid login code" });
       }
 
       clearFailures(key);
-      req.session.user = { type: "admin" };
-      await audit(req, "admin.login.success", { actorType: "admin", actorId: "admin" });
+      await regenerateSession(req);
+      req.session.user = { type: "admin", email: ADMIN_EMAIL };
+      await audit(req, "admin.login.success", { actorType: "admin", actorId: ADMIN_EMAIL });
+      await saveSession(req);
       res.json({ user: req.session.user });
     } catch (error) {
-      console.error("Admin login error:", error);
+      console.error("Admin OTP verify error:", error);
       res.status(500).json({ message: "Internal server error" });
     }
+  });
+
+  app.post("/api/auth/admin/login", (_req, res) => {
+    res.status(410).json({ message: "Admin password login is disabled. Use email code sign in." });
   });
 
   // Logout

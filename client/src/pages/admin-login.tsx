@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, ExternalLink, Shield } from "lucide-react";
+import { Loader2, ExternalLink, Shield, Mail, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -14,37 +14,62 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import lvcLogo from "@assets/logo.png";
 
 const loginSchema = z.object({
-  password: z.string().min(1, "Password is required"),
+  code: z.string().regex(/^\d{6}$/, "Enter the 6 digit code"),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
 
 export default function AdminLoginPage() {
-  const { login } = useAuth();
+  const { requestAdminOtp, verifyAdminOtp } = useAuth();
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      password: "",
+      code: "",
     },
   });
 
-  async function onSubmit(data: LoginForm) {
-    setIsLoading(true);
+  async function sendCode() {
+    setIsSending(true);
     try {
-      await login("admin", data);
+      await requestAdminOtp();
+      setCodeSent(true);
+      form.reset({ code: "" });
+      toast({
+        title: "Code sent",
+        description: "Check otto@lvcuk.com for your admin login code.",
+      });
     } catch (error) {
       toast({
-        title: "Login failed",
-        description: error instanceof Error ? error.message : "Invalid password",
+        title: "Code not sent",
+        description: error instanceof Error ? error.message : "Unable to send admin login code",
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setIsSending(false);
     }
   }
+
+  async function onSubmit(data: LoginForm) {
+    setIsVerifying(true);
+    try {
+      await verifyAdminOtp(data.code);
+    } catch (error) {
+      toast({
+        title: "Login failed",
+        description: error instanceof Error ? error.message : "Invalid login code",
+        variant: "destructive",
+      });
+    } finally {
+      setIsVerifying(false);
+    }
+  }
+
+  const isBusy = isSending || isVerifying;
 
   return (
     <div className="min-h-screen flex flex-col bg-muted/30">
@@ -74,43 +99,62 @@ export default function AdminLoginPage() {
             <CardHeader className="text-center pb-4">
               <CardTitle className="text-xl">Admin Sign In</CardTitle>
               <CardDescription>
-                Enter the admin password to continue
+                Email code for otto@lvcuk.com
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-                  <FormField
-                    control={form.control}
-                    name="password"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Admin Password</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="password" 
-                            placeholder="Enter admin password"
-                            {...field} 
-                            className="h-11"
-                            data-testid="input-admin-password"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+              {!codeSent ? (
+                <Button
+                  type="button"
+                  className="w-full h-11 text-base font-medium"
+                  disabled={isBusy}
+                  onClick={sendCode}
+                  data-testid="button-send-admin-code"
+                >
+                  {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                  Send Code
+                </Button>
+              ) : (
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+                    <FormField
+                      control={form.control}
+                      name="code"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Login Code</FormLabel>
+                          <FormControl>
+                            <Input
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              placeholder="000000"
+                              maxLength={6}
+                              {...field}
+                              onChange={(event) => field.onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                              className="h-11 text-center text-lg tracking-[0.3em]"
+                              data-testid="input-admin-otp"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <Button 
-                    type="submit" 
-                    className="w-full h-11 text-base font-medium" 
-                    disabled={isLoading}
-                    data-testid="button-admin-login"
-                  >
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Sign In
-                  </Button>
-                </form>
-              </Form>
+                    <Button
+                      type="submit"
+                      className="w-full h-11 text-base font-medium"
+                      disabled={isBusy}
+                      data-testid="button-admin-login"
+                    >
+                      {isVerifying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+                      Sign In
+                    </Button>
+                    <Button type="button" variant="outline" className="w-full" disabled={isBusy} onClick={sendCode}>
+                      Send New Code
+                    </Button>
+                  </form>
+                </Form>
+              )}
 
               <div className="mt-6 text-center text-sm text-muted-foreground">
                 <Link href="/" className="hover:text-foreground transition-colors" data-testid="link-customer-login">
