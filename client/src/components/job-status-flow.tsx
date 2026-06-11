@@ -24,6 +24,7 @@ interface JobFlowStage {
 
 interface JobStatusFlowProps {
   status: string;
+  workflowStatus?: string | null;
   jobDescription?: string | null;
   upcomingDate?: string | Date | null;
   upcomingDateType?: "parts" | "visit" | null;
@@ -258,6 +259,7 @@ function getToneClasses(tone: JobFlowTone) {
 
 export function JobStatusFlow({
   status,
+  workflowStatus,
   jobDescription,
   upcomingDate,
   upcomingDateType,
@@ -266,7 +268,8 @@ export function JobStatusFlow({
 }: JobStatusFlowProps) {
   const flowVariant = getFlowVariant(jobDescription);
   const stages = FLOW_STAGES[flowVariant];
-  const flowState = getFlowState(status, flowVariant);
+  const statusForFlow = workflowStatus?.trim() || status;
+  const flowState = getFlowState(statusForFlow, flowVariant);
   const activeIndex = Math.max(stages.findIndex((stage) => stage.id === flowState.stageId), 0);
   const toneClasses = getToneClasses(flowState.tone);
   const currentStage = stages[activeIndex];
@@ -285,7 +288,7 @@ export function JobStatusFlow({
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Job Progress</h2>
             <Badge variant="outline" className={cn("hover:no-default-hover-elevate", toneClasses.badge)}>
-              {currentStage.label}
+              {formatStatusLabel(status)}
             </Badge>
             <Badge variant="outline" className="bg-background text-muted-foreground hover:no-default-hover-elevate">
               {flowVariant === "breakdown" ? "Breakdown" : "Callback"}
