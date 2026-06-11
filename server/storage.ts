@@ -18,6 +18,7 @@ export interface IStorage {
   getCustomerAccount(id: string): Promise<CustomerAccount | undefined>;
   getCustomerAccountByCode(accountCode: string): Promise<CustomerAccount | undefined>;
   createCustomerAccount(account: InsertCustomerAccount): Promise<CustomerAccount>;
+  updateCustomerAccountEmail(accountCode: string, email: string | null): Promise<void>;
   updateCustomerAccountPassword(accountCode: string, passwordHash: string): Promise<void>;
   setMustChangePassword(accountCode: string, mustChange: boolean): Promise<void>;
   updateCustomerLastLogin(accountCode: string): Promise<void>;
@@ -96,6 +97,12 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async updateCustomerAccountEmail(accountCode: string, email: string | null): Promise<void> {
+    await db.update(customerAccounts)
+      .set({ email })
+      .where(eq(customerAccounts.accountCode, accountCode));
+  }
+
   async updateCustomerAccountPassword(accountCode: string, passwordHash: string): Promise<void> {
     await db.update(customerAccounts)
       .set({ passwordHash })
@@ -119,7 +126,8 @@ export class DatabaseStorage implements IStorage {
       return db.select().from(customerAccounts).where(
         or(
           ilike(customerAccounts.accountCode, `%${search}%`),
-          ilike(customerAccounts.accountName, `%${search}%`)
+          ilike(customerAccounts.accountName, `%${search}%`),
+          ilike(customerAccounts.email, `%${search}%`)
         )
       ).orderBy(desc(customerAccounts.createdAt));
     }

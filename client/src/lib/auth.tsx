@@ -14,7 +14,8 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   mustChangePassword: boolean;
-  login: (type: "customer", credentials: { accountCode?: string; password: string }) => Promise<void>;
+  requestCustomerOtp: (credentials: { accountCode: string; email: string }) => Promise<void>;
+  verifyCustomerOtp: (code: string) => Promise<void>;
   requestAdminOtp: () => Promise<void>;
   verifyAdminOtp: (code: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -48,8 +49,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function login(_type: "customer", credentials: { accountCode?: string; password: string }) {
-    const response = await apiRequest("POST", "/api/auth/customer/login", credentials);
+  async function requestCustomerOtp(credentials: { accountCode: string; email: string }) {
+    await apiRequest("POST", "/api/auth/customer/request-otp", credentials);
+  }
+
+  async function verifyCustomerOtp(code: string) {
+    const response = await apiRequest("POST", "/api/auth/customer/verify-otp", { code });
 
     const data = await response.json();
     setUser(data.user);
@@ -92,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, mustChangePassword, login, requestAdminOtp, verifyAdminOtp, logout, clearMustChangePassword }}>
+    <AuthContext.Provider value={{ user, isLoading, mustChangePassword, requestCustomerOtp, verifyCustomerOtp, requestAdminOtp, verifyAdminOtp, logout, clearMustChangePassword }}>
       {children}
     </AuthContext.Provider>
   );

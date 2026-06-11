@@ -8,6 +8,7 @@ export const customerAccounts = pgTable("customer_accounts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   accountCode: text("account_code").notNull().unique(),
   accountName: text("account_name").notNull(),
+  email: text("email"),
   passwordHash: text("password_hash").notNull(),
   mustChangePassword: boolean("must_change_password").notNull().default(true),
   lastLoginAt: timestamp("last_login_at"),

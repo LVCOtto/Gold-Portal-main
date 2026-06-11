@@ -1,124 +1,95 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "wouter";
-import { Users, RotateCcw, Loader2, Search, Eye } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Users, Loader2, Search, Eye, Save } from "lucide-react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { AdminLayout } from "@/components/admin-layout";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import type { CustomerAccount } from "@shared/schema";
 
-const resetPasswordSchema = z.object({
-  password: z
-    .string()
-    .min(12, "Password must be at least 12 characters")
-    .max(256, "Password must be 256 characters or fewer")
-    .refine((password) => /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password), {
-      message: "Password must contain upper case, lower case, and a number",
-    }),
+const emailSchema = z.object({
+  email: z.string().trim().refine((email) => email === "" || z.string().email().safeParse(email).success, {
+    message: "Enter a valid email address",
+  }),
 });
 
-type ResetPasswordForm = z.infer<typeof resetPasswordSchema>;
-
-function ResetPasswordDialog({ account, onSuccess }: { account: CustomerAccount; onSuccess: () => void }) {
-  const [open, setOpen] = useState(false);
+function AccountEmailInput({ account }: { account: CustomerAccount }) {
   const { toast } = useToast();
+  const [email, setEmail] = useState(account.email || "");
 
-  const form = useForm<ResetPasswordForm>({
-    resolver: zodResolver(resetPasswordSchema),
-    defaultValues: {
-      password: "",
-    },
-  });
+  const normalizedCurrentEmail = account.email || "";
+  const hasChanged = email.trim() !== normalizedCurrentEmail;
 
   const mutation = useMutation({
-    mutationFn: async (data: ResetPasswordForm) => {
-      const response = await apiRequest("PATCH", `/api/admin/accounts/${encodeURIComponent(account.accountCode)}/password`, data);
+    mutationFn: async () => {
+      const parsed = emailSchema.safeParse({ email });
+      if (!parsed.success) {
+        throw new Error(parsed.error.issues[0]?.message || "Enter a valid email address");
+      }
+      const response = await apiRequest("PATCH", `/api/admin/accounts/${encodeURIComponent(account.accountCode)}/email`, parsed.data);
       return response.json();
     },
-    onSuccess: () => {
-      toast({ title: "Password Reset", description: "The password has been updated successfully." });
-      form.reset();
-      setOpen(false);
-      onSuccess();
+    onSuccess: (data: { email: string | null }) => {
+      setEmail(data.email || "");
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/accounts"] });
+      toast({ title: "Email saved", description: "This address will be used for customer login codes." });
     },
     onError: (error) => {
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to reset password",
+        title: "Email not saved",
+        description: error instanceof Error ? error.message : "Failed to update email address",
         variant: "destructive",
       });
     },
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" data-testid={`button-reset-password-${account.accountCode}`}>
-          <RotateCcw className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Reset Password</DialogTitle>
-          <DialogDescription>
-            Set a new password for {account.accountName} ({account.accountCode})
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>New Password (required)</FormLabel>
-                  <FormControl>
-                    <Input type="password" placeholder="Minimum 12 characters" {...field} data-testid="input-new-password" />
-                  </FormControl>
-                  <p className="text-xs text-muted-foreground">
-                    Customer will use this once, then set their own password on first login.
-                  </p>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="flex justify-end gap-2 pt-4">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={mutation.isPending} data-testid="button-submit-reset">
-                {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Reset Password
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+    <div className="flex min-w-[260px] items-center gap-2">
+      <Input
+        type="email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && hasChanged && !mutation.isPending) {
+            mutation.mutate();
+          }
+        }}
+        placeholder="customer@example.com"
+        className="h-9"
+        data-testid={`input-account-email-${account.accountCode}`}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 px-3"
+        disabled={!hasChanged || mutation.isPending}
+        onClick={() => mutation.mutate()}
+        data-testid={`button-save-email-${account.accountCode}`}
+        aria-label={`Save email for ${account.accountCode}`}
+      >
+        {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+      </Button>
+    </div>
   );
 }
 
 export default function AdminAccountsPage() {
   const [search, setSearch] = useState("");
 
-  const { data: accounts, isLoading, refetch } = useQuery<CustomerAccount[]>({
+  const { data: accounts, isLoading } = useQuery<CustomerAccount[]>({
     queryKey: ["/api/admin/accounts", { search }],
   });
 
   return (
     <AdminLayout>
-      <div className="space-y-6 max-w-4xl">
+      <div className="space-y-6 max-w-6xl">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-semibold" data-testid="text-page-title">Customer Accounts</h1>
@@ -159,6 +130,7 @@ export default function AdminAccountsPage() {
                     <tr className="border-b text-left">
                       <th className="pb-3 font-medium text-xs uppercase tracking-wide text-muted-foreground">Account Code</th>
                       <th className="pb-3 font-medium text-xs uppercase tracking-wide text-muted-foreground">Account Name</th>
+                      <th className="pb-3 font-medium text-xs uppercase tracking-wide text-muted-foreground">OTP Email</th>
                       <th className="pb-3 font-medium text-xs uppercase tracking-wide text-muted-foreground hidden sm:table-cell">Created</th>
                       <th className="pb-3 font-medium text-xs uppercase tracking-wide text-muted-foreground text-right">Actions</th>
                     </tr>
@@ -172,6 +144,7 @@ export default function AdminAccountsPage() {
                       >
                         <td className="py-4 font-medium">{account.accountCode}</td>
                         <td className="py-4">{account.accountName}</td>
+                        <td className="py-4"><AccountEmailInput account={account} /></td>
                         <td className="py-4 text-sm text-muted-foreground hidden sm:table-cell">
                           {format(new Date(account.createdAt), "MMM d, yyyy")}
                         </td>
@@ -182,7 +155,6 @@ export default function AdminAccountsPage() {
                                 <Eye className="h-4 w-4" />
                               </Button>
                             </Link>
-                            <ResetPasswordDialog account={account} onSuccess={() => refetch()} />
                           </div>
                         </td>
                       </tr>

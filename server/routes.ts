@@ -121,6 +121,16 @@ declare module "express-session" {
       requestIp: string;
       userAgent?: string;
     };
+    customerOtp?: {
+      accountCode: string;
+      email: string;
+      codeHash: string;
+      expiresAt: number;
+      attempts: number;
+      sentAt: number;
+      requestIp: string;
+      userAgent?: string;
+    };
   }
 }
 
@@ -186,6 +196,8 @@ function safeStringEqual(a: string, b: string): boolean {
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "otto@lvcuk.com").trim().toLowerCase();
 const ADMIN_OTP_TTL_MS = 10 * 60 * 1000;
 const ADMIN_OTP_MAX_ATTEMPTS = 5;
+const CUSTOMER_OTP_TTL_MS = 10 * 60 * 1000;
+const CUSTOMER_OTP_MAX_ATTEMPTS = 5;
 
 function adminOtpLockoutKey(): string {
   return lockoutKey("admin", ADMIN_EMAIL);
@@ -195,10 +207,21 @@ function generateAdminOtp(): string {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
 
+function generateOtp(): string {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+}
+
 function hashAdminOtp(sessionId: string, code: string): string {
   return crypto
     .createHmac("sha256", process.env.SESSION_SECRET || "")
     .update(`${ADMIN_EMAIL}:${sessionId}:${code}`)
+    .digest("hex");
+}
+
+function hashCustomerOtp(sessionId: string, accountCode: string, email: string, code: string): string {
+  return crypto
+    .createHmac("sha256", process.env.SESSION_SECRET || "")
+    .update(`${accountCode.toLowerCase()}:${email.toLowerCase()}:${sessionId}:${code}`)
     .digest("hex");
 }
 
@@ -244,6 +267,38 @@ async function sendAdminOtpEmail(req: Request, code: string) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Resend email delivery failed (${response.status})${body ? `: ${body.slice(0, 300)}` : ""}`);
+  }
+}
+
+async function sendCustomerOtpEmail(to: string, accountName: string, code: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM || process.env.EMAIL_FROM;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY must be set to send customer login codes");
+  }
+  if (!from) {
+    throw new Error("RESEND_FROM or EMAIL_FROM must be set to send customer login codes");
+  }
+
+  const expiresInMinutes = Math.floor(CUSTOMER_OTP_TTL_MS / 60000);
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      subject: "LVC Portal login code",
+      text: `Your LVC Portal login code for ${accountName} is ${code}. It expires in ${expiresInMinutes} minutes.`,
+      html: `<p>Your LVC Portal login code for ${accountName} is:</p><p style="font-size:24px;letter-spacing:4px;font-weight:700;">${code}</p><p>It expires in ${expiresInMinutes} minutes.</p>`,
+    }),
   });
 
   if (!response.ok) {
@@ -546,18 +601,28 @@ export async function registerRoutes(
     }
   });
 
-  // Customer login (with rate limiting + per-account lockout)
-  app.post("/api/auth/customer/login", loginRateLimiter, async (req, res) => {
-    try {
-      const { accountCode, password } = req.body || {};
+  const customerOtpRequestLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: { message: "Too many code requests. Please try again in 15 minutes." },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
 
-      if (typeof accountCode !== "string" || typeof password !== "string" || !accountCode || !password) {
-        return res.status(400).json({ message: "Account code and password are required" });
+  // Customer login: email a one-time 6 digit code to the approved mailbox on the account.
+  app.post("/api/auth/customer/request-otp", customerOtpRequestLimiter, async (req, res) => {
+    try {
+      const parsed = z.object({
+        accountCode: z.string().trim().min(1, "Account code is required").max(64, "Invalid account code"),
+        email: z.string().trim().email("Enter a valid email address").max(320, "Invalid email address"),
+      }).safeParse(req.body || {});
+
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid login details" });
       }
-      const normalizedAccountCode = accountCode.trim();
-      if (!normalizedAccountCode || normalizedAccountCode.length > 64 || password.length > 256) {
-        return res.status(400).json({ message: "Invalid credentials" });
-      }
+
+      const normalizedAccountCode = parsed.data.accountCode;
+      const normalizedEmail = parsed.data.email.toLowerCase();
 
       const key = lockoutKey("customer", normalizedAccountCode);
       const lockedFor = isLockedOut(key);
@@ -566,33 +631,112 @@ export async function registerRoutes(
       }
 
       const account = await storage.getCustomerAccountByCode(normalizedAccountCode);
-      // Always run bcrypt to keep timing roughly constant whether or not the account exists.
-      const dummyHash = "$2a$10$CwTycUXWue0Thq9StjUM0uJ8.OE8xvRgHJ3kQ8h2k5OKqQF7j2/X.";
-      const valid = await bcrypt.compare(password, account?.passwordHash || dummyHash);
-      if (!account || !valid) {
+      if (!account || !account.email || account.email.trim().toLowerCase() !== normalizedEmail) {
         recordFailure(key);
-        await audit(req, "login.failure", { actorType: "customer", actorId: normalizedAccountCode });
-        return res.status(401).json({ message: "Invalid credentials" });
+        await audit(req, "customer.otp.request_denied", { actorType: "customer", actorId: normalizedAccountCode });
+        return res.status(401).json({ message: "Account code and email do not match" });
+      }
+
+      const code = generateOtp();
+      req.session.customerOtp = {
+        accountCode: account.accountCode,
+        email: normalizedEmail,
+        codeHash: hashCustomerOtp(req.sessionID, account.accountCode, normalizedEmail, code),
+        expiresAt: Date.now() + CUSTOMER_OTP_TTL_MS,
+        attempts: 0,
+        sentAt: Date.now(),
+        requestIp: clientIp(req),
+        userAgent: (req.headers["user-agent"] as string | undefined) || undefined,
+      };
+
+      try {
+        await sendCustomerOtpEmail(normalizedEmail, account.accountName, code);
+      } catch (error) {
+        delete req.session.customerOtp;
+        console.error("Customer OTP email error:", error);
+        return res.status(500).json({ message: "Customer login email is not configured" });
+      }
+
+      await audit(req, "customer.otp.requested", { actorType: "customer", actorId: account.accountCode });
+      res.json({ message: "Code sent", email: normalizedEmail, expiresInSeconds: CUSTOMER_OTP_TTL_MS / 1000 });
+    } catch (error) {
+      console.error("Customer OTP request error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/customer/verify-otp", loginRateLimiter, async (req, res) => {
+    try {
+      const parsed = z.object({ code: z.string().regex(/^\d{6}$/, "Enter the 6 digit code") }).safeParse(req.body || {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid code" });
+      }
+
+      const challenge = req.session.customerOtp;
+      if (!challenge) {
+        return res.status(400).json({ message: "Request a new login code" });
+      }
+
+      const key = lockoutKey("customer", challenge.accountCode);
+      const lockedFor = isLockedOut(key);
+      if (lockedFor > 0) {
+        return res.status(429).json({ message: `Account temporarily locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
+      }
+
+      if (challenge.expiresAt <= Date.now()) {
+        delete req.session.customerOtp;
+        return res.status(401).json({ message: "Login code expired" });
+      }
+
+      if (challenge.attempts >= CUSTOMER_OTP_MAX_ATTEMPTS) {
+        delete req.session.customerOtp;
+        recordFailure(key);
+        await audit(req, "customer.otp.too_many_attempts", { actorType: "customer", actorId: challenge.accountCode });
+        return res.status(429).json({ message: "Too many incorrect codes. Request a new login code." });
+      }
+
+      const expectedHash = hashCustomerOtp(req.sessionID, challenge.accountCode, challenge.email, parsed.data.code);
+      if (!safeStringEqual(expectedHash, challenge.codeHash)) {
+        req.session.customerOtp = { ...challenge, attempts: challenge.attempts + 1 };
+        recordFailure(key);
+        await audit(req, "customer.otp.failure", { actorType: "customer", actorId: challenge.accountCode });
+        return res.status(401).json({ message: "Invalid login code" });
+      }
+
+      const account = await storage.getCustomerAccountByCode(challenge.accountCode);
+      if (!account || !account.email || account.email.trim().toLowerCase() !== challenge.email) {
+        delete req.session.customerOtp;
+        return res.status(401).json({ message: "Request a new login code" });
       }
 
       clearFailures(key);
+      await regenerateSession(req);
       req.session.user = {
         type: "customer",
+        email: account.email,
         accountCode: account.accountCode,
         accountName: account.accountName,
-        mustChangePassword: !!account.mustChangePassword,
+        mustChangePassword: false,
       };
       await storage.updateCustomerLastLogin(account.accountCode);
+      if (account.mustChangePassword) {
+        await storage.setMustChangePassword(account.accountCode, false);
+      }
       await audit(req, "login.success", { actorType: "customer", actorId: account.accountCode });
+      await saveSession(req);
 
       res.json({
         user: req.session.user,
-        mustChangePassword: !!account.mustChangePassword,
+        mustChangePassword: false,
       });
     } catch (error) {
-      console.error("Login error:", error);
+      console.error("Customer OTP verify error:", error);
       res.status(500).json({ message: "Internal server error" });
     }
+  });
+
+  app.post("/api/auth/customer/login", (_req, res) => {
+    res.status(410).json({ message: "Customer password login is disabled. Use email code sign in." });
   });
 
   const adminOtpRequestLimiter = rateLimit({
@@ -1333,16 +1477,16 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/admin/accounts/:accountCode/password", requireAuth("admin"), async (req, res) => {
+  app.patch("/api/admin/accounts/:accountCode/email", requireAuth("admin"), async (req, res) => {
     try {
       const accountCode = req.params.accountCode.trim();
-      const { password } = req.body || {};
+      const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : null;
 
-      if (typeof password !== "string" || password.length < 12 || password.length > 256) {
-        return res.status(400).json({ message: "Password must be 12-256 characters" });
+      if (email === null) {
+        return res.status(400).json({ message: "Email is required" });
       }
-      if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
-        return res.status(400).json({ message: "Password must contain upper, lower, and number" });
+      if (email && !z.string().email().safeParse(email).success) {
+        return res.status(400).json({ message: "Enter a valid email address" });
       }
 
       const account = await storage.getCustomerAccountByCode(accountCode);
@@ -1350,17 +1494,17 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Customer account not found" });
       }
 
-      const passwordHash = await bcrypt.hash(password, 12);
-      await storage.updateCustomerAccountPassword(account.accountCode, passwordHash);
-      await storage.setMustChangePassword(account.accountCode, true);
-      await audit(req, "admin.account.password_reset", {
+      const savedEmail = email || null;
+      await storage.updateCustomerAccountEmail(account.accountCode, savedEmail);
+      await audit(req, "admin.account.email_update", {
         targetType: "customer_account",
         targetId: account.accountCode,
+        payload: { emailSet: !!savedEmail },
       });
 
-      res.json({ message: "Password updated", accountCode: account.accountCode, mustChangePassword: true });
+      res.json({ message: "Email updated", accountCode: account.accountCode, email: savedEmail });
     } catch (error) {
-      console.error("Password reset error:", error);
+      console.error("Account email update error:", error);
       res.status(500).json({ message: "Internal server error" });
     }
   });

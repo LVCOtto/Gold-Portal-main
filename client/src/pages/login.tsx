@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, ExternalLink } from "lucide-react";
+import { Loader2, ExternalLink, Mail, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -15,38 +15,75 @@ import lvcLogo from "@assets/logo.png";
 
 const loginSchema = z.object({
   accountCode: z.string().min(1, "Account code is required"),
-  password: z.string().min(1, "Password is required"),
+  email: z.string().email("Enter a valid email address"),
+});
+
+const codeSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Enter the 6 digit code"),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
+type CodeForm = z.infer<typeof codeSchema>;
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { requestCustomerOtp, verifyCustomerOtp } = useAuth();
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  const form = useForm<LoginForm>({
+  const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       accountCode: "",
-      password: "",
+      email: "",
     },
   });
 
-  async function onSubmit(data: LoginForm) {
-    setIsLoading(true);
+  const codeForm = useForm<CodeForm>({
+    resolver: zodResolver(codeSchema),
+    defaultValues: {
+      code: "",
+    },
+  });
+
+  async function sendCode(data: LoginForm) {
+    setIsSending(true);
     try {
-      await login("customer", data);
+      await requestCustomerOtp(data);
+      setCodeSent(true);
+      codeForm.reset({ code: "" });
+      toast({
+        title: "Code sent",
+        description: "Check your email for your customer login code.",
+      });
     } catch (error) {
       toast({
-        title: "Login failed",
-        description: error instanceof Error ? error.message : "Invalid credentials",
+        title: "Code not sent",
+        description: error instanceof Error ? error.message : "Unable to send login code",
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setIsSending(false);
     }
   }
+
+  async function verifyCode(data: CodeForm) {
+    setIsVerifying(true);
+    try {
+      await verifyCustomerOtp(data.code);
+    } catch (error) {
+      toast({
+        title: "Login failed",
+        description: error instanceof Error ? error.message : "Invalid login code",
+        variant: "destructive",
+      });
+    } finally {
+      setIsVerifying(false);
+    }
+  }
+
+  const isBusy = isSending || isVerifying;
 
   return (
     <div className="min-h-screen flex flex-col bg-muted/30">
@@ -73,14 +110,15 @@ export default function LoginPage() {
             <CardHeader className="text-center pb-4">
               <CardTitle className="text-xl">Sign In</CardTitle>
               <CardDescription>
-                Enter your account code and password
+                Enter your account code and approved email
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              {!codeSent ? (
+              <Form {...loginForm}>
+                <form onSubmit={loginForm.handleSubmit(sendCode)} className="space-y-5">
                   <FormField
-                    control={form.control}
+                    control={loginForm.control}
                     name="accountCode"
                     render={({ field }) => (
                       <FormItem>
@@ -99,18 +137,18 @@ export default function LoginPage() {
                   />
 
                   <FormField
-                    control={form.control}
-                    name="password"
+                    control={loginForm.control}
+                    name="email"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Password</FormLabel>
+                        <FormLabel>Email</FormLabel>
                         <FormControl>
                           <Input 
-                            type="password" 
-                            placeholder="Enter your password"
+                            type="email" 
+                            placeholder="name@example.com"
                             {...field} 
                             className="h-11"
-                            data-testid="input-password"
+                            data-testid="input-email"
                           />
                         </FormControl>
                         <FormMessage />
@@ -121,14 +159,55 @@ export default function LoginPage() {
                   <Button 
                     type="submit" 
                     className="w-full h-11 text-base font-medium" 
-                    disabled={isLoading}
-                    data-testid="button-login"
+                    disabled={isBusy}
+                    data-testid="button-send-customer-code"
                   >
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Sign In
+                    {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                    Send Code
                   </Button>
                 </form>
               </Form>
+              ) : (
+              <Form {...codeForm}>
+                <form onSubmit={codeForm.handleSubmit(verifyCode)} className="space-y-5">
+                  <FormField
+                    control={codeForm.control}
+                    name="code"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Login Code</FormLabel>
+                        <FormControl>
+                          <Input
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            placeholder="000000"
+                            maxLength={6}
+                            {...field}
+                            onChange={(event) => field.onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                            className="h-11 text-center text-lg tracking-[0.3em]"
+                            data-testid="input-customer-otp"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <Button
+                    type="submit"
+                    className="w-full h-11 text-base font-medium"
+                    disabled={isBusy}
+                    data-testid="button-customer-login"
+                  >
+                    {isVerifying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+                    Sign In
+                  </Button>
+                  <Button type="button" variant="outline" className="w-full" disabled={isBusy} onClick={loginForm.handleSubmit(sendCode)}>
+                    Send New Code
+                  </Button>
+                </form>
+              </Form>
+              )}
 
               <div className="mt-6 text-center text-sm text-muted-foreground">
                 <Link href="/admin/login" className="hover:text-foreground transition-colors" data-testid="link-admin-login">
