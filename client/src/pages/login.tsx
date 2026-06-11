@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,19 +18,17 @@ const loginSchema = z.object({
   email: z.string().email("Enter a valid email address"),
 });
 
-const codeSchema = z.object({
-  code: z.string().regex(/^\d{6}$/, "Enter the 6 digit code"),
-});
-
 type LoginForm = z.infer<typeof loginSchema>;
-type CodeForm = z.infer<typeof codeSchema>;
 
 export default function LoginPage() {
   const { requestCustomerOtp, verifyCustomerOtp } = useAuth();
   const { toast } = useToast();
   const [codeSent, setCodeSent] = useState(false);
+  const [loginCode, setLoginCode] = useState("");
+  const [loginCodeError, setLoginCodeError] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const codeInputRef = useRef<HTMLInputElement>(null);
 
   const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -40,19 +38,14 @@ export default function LoginPage() {
     },
   });
 
-  const codeForm = useForm<CodeForm>({
-    resolver: zodResolver(codeSchema),
-    defaultValues: {
-      code: "",
-    },
-  });
-
   async function sendCode(data: LoginForm) {
     setIsSending(true);
     try {
       await requestCustomerOtp(data);
       setCodeSent(true);
-      codeForm.reset({ code: "" });
+      setLoginCode("");
+      setLoginCodeError("");
+      setTimeout(() => codeInputRef.current?.focus(), 0);
       toast({
         title: "Code sent",
         description: "Check your email for your customer login code.",
@@ -68,10 +61,17 @@ export default function LoginPage() {
     }
   }
 
-  async function verifyCode(data: CodeForm) {
+  async function verifyCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!/^\d{6}$/.test(loginCode)) {
+      setLoginCodeError("Enter the 6 digit code");
+      return;
+    }
+
     setIsVerifying(true);
     try {
-      await verifyCustomerOtp(data.code);
+      await verifyCustomerOtp(loginCode);
     } catch (error) {
       toast({
         title: "Login failed",
@@ -168,41 +168,36 @@ export default function LoginPage() {
                 </form>
               </Form>
               ) : (
-              <Form {...codeForm}>
-                <form onSubmit={codeForm.handleSubmit(verifyCode)} className="space-y-5">
-                  <FormField
-                    control={codeForm.control}
-                    name="code"
-                    render={({ field }) => {
-                      const { ref, name, ...fieldProps } = field;
-
-                      return (
-                      <FormItem>
-                        <FormLabel>Login Code</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...fieldProps}
-                            ref={ref}
-                            name="customerLoginOtp"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            autoCorrect="off"
-                            autoCapitalize="none"
-                            spellCheck={false}
-                            placeholder="000000"
-                            maxLength={6}
-                            onChange={(event) => field.onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                            onFocus={(event) => event.currentTarget.select()}
-                            className="h-11 text-center text-lg tracking-[0.3em]"
-                            disabled={isBusy}
-                            data-testid="input-customer-otp"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                      );
-                    }}
-                  />
+                <form onSubmit={verifyCode} className="space-y-5" autoComplete="off">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" htmlFor="customer-login-otp">
+                      Login Code
+                    </label>
+                    <Input
+                      ref={codeInputRef}
+                      id="customer-login-otp"
+                      key="customer-login-otp"
+                      name="customer-login-otp"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      placeholder="000000"
+                      maxLength={6}
+                      value={loginCode}
+                      onChange={(event) => {
+                        setLoginCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+                        setLoginCodeError("");
+                      }}
+                      onFocus={(event) => event.currentTarget.select()}
+                      className="h-11 text-center text-lg tracking-[0.3em]"
+                      disabled={isBusy}
+                      data-testid="input-customer-otp"
+                    />
+                    {loginCodeError && <p className="text-sm font-medium text-destructive">{loginCodeError}</p>}
+                  </div>
 
                   <Button
                     type="submit"
@@ -217,7 +212,6 @@ export default function LoginPage() {
                     Send New Code
                   </Button>
                 </form>
-              </Form>
               )}
 
               <div className="mt-6 text-center text-sm text-muted-foreground">
