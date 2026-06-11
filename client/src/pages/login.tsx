@@ -3,11 +3,13 @@ import { Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { REGEXP_ONLY_DIGITS } from "input-otp";
 import { Loader2, ExternalLink, Mail, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -177,16 +179,27 @@ export default function LoginPage() {
                       <FormItem>
                         <FormLabel>Login Code</FormLabel>
                         <FormControl>
-                          <Input
+                          <InputOTP
+                            maxLength={6}
+                            pattern={REGEXP_ONLY_DIGITS}
                             inputMode="numeric"
                             autoComplete="one-time-code"
-                            placeholder="000000"
-                            maxLength={6}
-                            {...field}
-                            onChange={(event) => field.onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                            className="h-11 text-center text-lg tracking-[0.3em]"
+                            value={field.value}
+                            onChange={field.onChange}
+                            pasteTransformer={(value) => value.replace(/\D/g, "")}
+                            containerClassName="justify-center"
+                            disabled={isBusy}
                             data-testid="input-customer-otp"
-                          />
+                          >
+                            <InputOTPGroup>
+                              <InputOTPSlot index={0} />
+                              <InputOTPSlot index={1} />
+                              <InputOTPSlot index={2} />
+                              <InputOTPSlot index={3} />
+                              <InputOTPSlot index={4} />
+                              <InputOTPSlot index={5} />
+                            </InputOTPGroup>
+                          </InputOTP>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
