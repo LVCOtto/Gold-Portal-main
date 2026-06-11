@@ -198,6 +198,7 @@ const ADMIN_OTP_TTL_MS = 10 * 60 * 1000;
 const ADMIN_OTP_MAX_ATTEMPTS = 5;
 const CUSTOMER_OTP_TTL_MS = 10 * 60 * 1000;
 const CUSTOMER_OTP_MAX_ATTEMPTS = 5;
+const OTP_EMAIL_SANDBOX_SETTING = "otp_email_sandbox_enabled";
 
 function adminOtpLockoutKey(): string {
   return lockoutKey("admin", ADMIN_EMAIL);
@@ -223,6 +224,10 @@ function hashCustomerOtp(sessionId: string, accountCode: string, email: string, 
     .createHmac("sha256", process.env.SESSION_SECRET || "")
     .update(`${accountCode.toLowerCase()}:${email.toLowerCase()}:${sessionId}:${code}`)
     .digest("hex");
+}
+
+async function isOtpEmailSandboxEnabled(): Promise<boolean> {
+  return (await storage.getSystemSetting(OTP_EMAIL_SANDBOX_SETTING)) === "true";
 }
 
 function isAdminIpAllowed(req: Request): boolean {
@@ -286,6 +291,12 @@ async function sendCustomerOtpEmail(to: string, accountName: string, code: strin
   }
 
   const expiresInMinutes = Math.floor(CUSTOMER_OTP_TTL_MS / 60000);
+  const sandboxEnabled = await isOtpEmailSandboxEnabled();
+  const deliveryTo = sandboxEnabled ? ADMIN_EMAIL : to;
+  const subjectPrefix = sandboxEnabled ? "[REROUTED] " : "";
+  const rerouteText = sandboxEnabled ? `\n\nRerouted by admin setting. Intended recipient: ${to}.` : "";
+  const rerouteHtml = sandboxEnabled ? `<p><strong>Rerouted by admin setting.</strong><br />Intended recipient: ${to}</p>` : "";
+
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -294,10 +305,10 @@ async function sendCustomerOtpEmail(to: string, accountName: string, code: strin
     },
     body: JSON.stringify({
       from,
-      to: [to],
-      subject: "LVC Portal login code",
-      text: `Your LVC Portal login code for ${accountName} is ${code}. It expires in ${expiresInMinutes} minutes.`,
-      html: `<p>Your LVC Portal login code for ${accountName} is:</p><p style="font-size:24px;letter-spacing:4px;font-weight:700;">${code}</p><p>It expires in ${expiresInMinutes} minutes.</p>`,
+      to: [deliveryTo],
+      subject: `${subjectPrefix}LVC Portal login code`,
+      text: `Your LVC Portal login code for ${accountName} is ${code}. It expires in ${expiresInMinutes} minutes.${rerouteText}`,
+      html: `<p>Your LVC Portal login code for ${accountName} is:</p><p style="font-size:24px;letter-spacing:4px;font-weight:700;">${code}</p><p>It expires in ${expiresInMinutes} minutes.</p>${rerouteHtml}`,
     }),
   });
 
@@ -1460,6 +1471,45 @@ export async function registerRoutes(
       res.json(result);
     } catch (error) {
       console.error("Audit fetch error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/admin/settings/communications", requireAuth("admin"), async (_req, res) => {
+    try {
+      res.json({
+        otpEmailSandboxEnabled: await isOtpEmailSandboxEnabled(),
+        otpEmailSandboxRecipient: ADMIN_EMAIL,
+      });
+    } catch (error) {
+      console.error("Communication settings fetch error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/admin/settings/communications", requireAuth("admin"), async (req, res) => {
+    try {
+      const parsed = z.object({
+        otpEmailSandboxEnabled: z.boolean(),
+      }).safeParse(req.body || {});
+
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid communication settings" });
+      }
+
+      await storage.setSystemSetting(OTP_EMAIL_SANDBOX_SETTING, String(parsed.data.otpEmailSandboxEnabled));
+      await audit(req, "admin.settings.communications_update", {
+        targetType: "system_setting",
+        targetId: OTP_EMAIL_SANDBOX_SETTING,
+        payload: { otpEmailSandboxEnabled: parsed.data.otpEmailSandboxEnabled },
+      });
+
+      res.json({
+        otpEmailSandboxEnabled: parsed.data.otpEmailSandboxEnabled,
+        otpEmailSandboxRecipient: ADMIN_EMAIL,
+      });
+    } catch (error) {
+      console.error("Communication settings update error:", error);
       res.status(500).json({ message: "Internal server error" });
     }
   });
