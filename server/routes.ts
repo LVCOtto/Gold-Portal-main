@@ -1155,12 +1155,12 @@ export async function registerRoutes(
         }
 
         const override = overrideMap.get(job.jobId);
+        const upcoming = computeUpcomingDate(job, override);
         const displayStatus = computeCustomerDisplayStatus(job, override, upcoming) || job.status || 'Unknown';
         const adminNotes = override?.adminNotes || '';
-        
+
         // Compute ETA using same logic as main jobs list
         let etaInfo = '';
-        const upcoming = computeUpcomingDate(job, override);
         
         if (upcoming) {
           const isAwaitingParts = displayStatus.toLowerCase().includes('awaiting parts');
