@@ -110,6 +110,10 @@ function getFlowState(status: string, variant: JobFlowVariant): { stageId: JobFl
     return { stageId: "logged", tone: "standard" };
   }
 
+  if (/overdue/.test(normalized)) {
+    return { stageId: variant === "breakdown" ? "booked" : "awaiting_parts", tone: "blocked" };
+  }
+
   if (/cancel|reject/.test(normalized)) {
     return { stageId: "logged", tone: "blocked" };
   }
@@ -185,6 +189,10 @@ function getStatusSummary(
   const formattedDate = formatOptionalDate(upcomingDate);
 
   if (tone === "blocked") {
+    if (stageId === "awaiting_parts") {
+      return "Parts ETA is overdue. Contact the LVC team for an updated date.";
+    }
+
     return "This job is outside the standard flow. Contact the LVC team if you need more detail.";
   }
 

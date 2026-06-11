@@ -78,6 +78,30 @@ function parseFlexibleDate(dateStr: unknown): Date | null {
   return null;
 }
 
+function startOfDay(date: Date): Date {
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  return normalized;
+}
+
+function isPastDate(date: Date): boolean {
+  return startOfDay(date).getTime() < startOfDay(new Date()).getTime();
+}
+
+function selectAwaitingPartsDueDate(inferredEta: unknown, partsDue: unknown): Date | null {
+  const inferredEtaDate = parseFlexibleDate(inferredEta);
+  if (inferredEtaDate && !isPastDate(inferredEtaDate)) {
+    return inferredEtaDate;
+  }
+
+  const partsDueDate = parseFlexibleDate(partsDue);
+  if (partsDueDate && !isPastDate(partsDueDate)) {
+    return partsDueDate;
+  }
+
+  return null;
+}
+
 // Extend session data type
 declare module "express-session" {
   interface SessionData {
@@ -357,6 +381,28 @@ function computeUpcomingDate(
     return { date: new Date(job.visitDate), type: 'visit' };
   }
   
+  return null;
+}
+
+function computeCustomerDisplayStatus(
+  job: { status?: string | null },
+  override: { displayStatus?: string | null } | null | undefined,
+  upcoming: { date: Date; type: 'parts' | 'visit' } | null,
+): string | null {
+  const overriddenStatus = override?.displayStatus?.trim();
+  if (overriddenStatus) {
+    return overriddenStatus;
+  }
+
+  const status = job.status?.trim();
+  if (!status) {
+    return null;
+  }
+
+  if (status.toLowerCase().includes('awaiting parts') && !upcoming) {
+    return 'Overdue';
+  }
+
   return null;
 }
 
@@ -787,7 +833,7 @@ export async function registerRoutes(
         const upcoming = computeUpcomingDate(job, override);
         return {
           ...job,
-          displayStatus: override?.displayStatus || null,
+          displayStatus: computeCustomerDisplayStatus(job, override, upcoming),
           adminNotes: override?.adminNotes || null,
           upcomingDate: upcoming?.date || null,
           upcomingDateType: upcoming?.type || null,
@@ -824,7 +870,7 @@ export async function registerRoutes(
       res.json({ 
         job: {
           ...job,
-          displayStatus: override?.displayStatus || null,
+          displayStatus: computeCustomerDisplayStatus(job, override, upcoming),
           adminNotes: override?.adminNotes || null,
           upcomingDate: upcoming?.date || null,
           upcomingDateType: upcoming?.type || null,
@@ -979,7 +1025,8 @@ export async function registerRoutes(
       // Build CSV data
       const csvData = result.jobs.map(job => {
         const override = overrideMap.get(job.jobId);
-        const displayStatus = override?.displayStatus || job.status;
+        const upcoming = computeUpcomingDate(job, override);
+        const displayStatus = computeCustomerDisplayStatus(job, override, upcoming) || job.status;
         return {
           "Job ID": job.jobId,
           "Site Name": job.siteName,
@@ -1108,7 +1155,7 @@ export async function registerRoutes(
         }
 
         const override = overrideMap.get(job.jobId);
-        const displayStatus = override?.displayStatus || job.status || 'Unknown';
+        const displayStatus = computeCustomerDisplayStatus(job, override, upcoming) || job.status || 'Unknown';
         const adminNotes = override?.adminNotes || '';
         
         // Compute ETA using same logic as main jobs list
@@ -1383,7 +1430,7 @@ export async function registerRoutes(
         return {
           ...job,
           override: override || null,
-          displayStatus: override?.displayStatus || null,
+          displayStatus: computeCustomerDisplayStatus(job, override, upcoming),
           adminNotes: override?.adminNotes || null,
           upcomingDate: upcoming?.date || null,
           upcomingDateType: upcoming?.type || null,
@@ -1767,10 +1814,13 @@ export async function registerRoutes(
           const jobType = getCol(row, 'Job Type', 'job_type', 'JobType', 'dbo_tblJobType_Name');
           const equipment = getCol(row, 'Equipment', 'equipment');
           const engineerName = getCol(row, 'Allocated Engineer', 'engineer_name', 'Employee', 'Engineer');
-          const etaDate = getCol(row, 'ETA', 'Eta', 'ETA Date', 'eta_date');
+           const inferredEta = getCol(row, 'Inferred ETA', 'inferred_eta', 'ETA', 'Eta', 'ETA Date', 'eta_date');
           const statusText = displayStatus ? String(displayStatus).toLowerCase() : '';
-          const visitDate = getCol(row, 'Visit Date', 'visit_date', 'VisitDate', 'Scheduled Date', 'Engineer Visit Date') || (statusText.includes('pending engineer') ? etaDate : null);
-          const partsDue = getCol(row, 'Parts Due', 'parts_due', 'due_date', 'Due', 'DueDate', 'Parts ETA', 'Parts ETA Date') || (statusText.includes('awaiting parts') ? etaDate : null);
+          const visitDate = parseFlexibleDate(getCol(row, 'Visit Date', 'visit_date', 'VisitDate', 'Scheduled Date', 'Engineer Visit Date'));
+          const partsDue = getCol(row, 'Parts Due', 'parts_due', 'due_date', 'Due', 'DueDate', 'Parts ETA', 'Parts ETA Date');
+          const dueDate = statusText.includes('awaiting parts')
+            ? selectAwaitingPartsDueDate(inferredEta, partsDue)
+            : parseFlexibleDate(partsDue ? String(partsDue) : null);
           const jobValue = getCol(row, 'Total Job Value', 'job_value_estimate', 'JobValue', 'Job Value');
           const postCode = getCol(row, 'PostCode', 'postcode', 'post_code');
 
@@ -1813,8 +1863,8 @@ export async function registerRoutes(
             nextActionDueDate: null,
             priority: null,
             jobValueEstimate: jobValue ? String(jobValue).replace(/[^0-9.-]/g, '') : null,
-            dueDate: parseFlexibleDate(partsDue ? String(partsDue) : null),
-            visitDate: parseFlexibleDate(visitDate ? String(visitDate) : null),
+            dueDate,
+            visitDate,
             equipment: equipment ? String(equipment).trim() : null,
             importBatchId: null,
           });

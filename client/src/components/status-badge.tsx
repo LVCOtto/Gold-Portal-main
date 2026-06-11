@@ -40,6 +40,7 @@ const STATUS_COLORS: Record<string, string> = {
   delayed: "bg-muted text-muted-foreground",
   cancelled: "bg-destructive/10 text-destructive",
   rejected: "bg-destructive/10 text-destructive",
+  overdue: "bg-destructive/10 text-destructive",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -64,6 +65,7 @@ const STATUS_LABELS: Record<string, string> = {
   delayed: "Delayed",
   cancelled: "Cancelled",
   rejected: "Rejected",
+  overdue: "Overdue",
 };
 
 export function StatusBadge({ status, showRaw = false, className }: StatusBadgeProps) {

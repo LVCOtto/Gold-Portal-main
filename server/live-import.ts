@@ -128,6 +128,30 @@ function parseFlexibleDate(dateStr: unknown): Date | null {
   return isValidDate(isoParsed) ? isoParsed : null;
 }
 
+function startOfDay(date: Date): Date {
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  return normalized;
+}
+
+function isPastDate(date: Date): boolean {
+  return startOfDay(date).getTime() < startOfDay(new Date()).getTime();
+}
+
+function selectAwaitingPartsDueDate(inferredEta: unknown, partsDue: unknown): Date | null {
+  const inferredEtaDate = parseFlexibleDate(inferredEta);
+  if (inferredEtaDate && !isPastDate(inferredEtaDate)) {
+    return inferredEtaDate;
+  }
+
+  const partsDueDate = parseFlexibleDate(partsDue);
+  if (partsDueDate && !isPastDate(partsDueDate)) {
+    return partsDueDate;
+  }
+
+  return null;
+}
+
 function getCol(row: Record<string, unknown>, ...names: string[]): unknown {
   for (const name of names) {
     const value = row[name];
@@ -262,10 +286,13 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
       const jobType = getCol(row, "Job Type", "job_type", "JobType");
       const equipment = getCol(row, "Equipment", "equipment");
       const engineerName = getCol(row, "Allocated Engineer", "engineer_name", "Employee", "Engineer");
-      const etaDate = getCol(row, "ETA", "Eta", "ETA Date", "eta_date");
+        const inferredEta = getCol(row, "Inferred ETA", "inferred_eta", "ETA", "Eta", "ETA Date", "eta_date");
       const statusText = displayStatus ? String(displayStatus).toLowerCase() : "";
-      const visitDate = getCol(row, "Visit Date", "visit_date", "VisitDate", "Scheduled Date", "Engineer Visit Date") || (statusText.includes("pending engineer") ? etaDate : null);
-      const partsDue = getCol(row, "Parts Due", "parts_due", "due_date", "Due", "DueDate", "Parts ETA", "Parts ETA Date") || (statusText.includes("awaiting parts") ? etaDate : null);
+      const visitDate = parseFlexibleDate(getCol(row, "Visit Date", "visit_date", "VisitDate", "Scheduled Date", "Engineer Visit Date"));
+      const partsDue = getCol(row, "Parts Due", "parts_due", "due_date", "Due", "DueDate", "Parts ETA", "Parts ETA Date");
+      const dueDate = statusText.includes("awaiting parts")
+        ? selectAwaitingPartsDueDate(inferredEta, partsDue)
+        : parseFlexibleDate(partsDue);
       const jobValue = getCol(row, "Total Job Value", "job_value_estimate", "JobValue", "Job Value");
       const postCode = getCol(row, "PostCode", "postcode", "post_code");
 
@@ -307,8 +334,8 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
         nextActionDueDate: null,
         priority: null,
         jobValueEstimate: jobValue ? String(jobValue).replace(/[^0-9.-]/g, "") : null,
-        dueDate: parseFlexibleDate(partsDue),
-        visitDate: parseFlexibleDate(visitDate),
+        dueDate,
+        visitDate,
         equipment: equipment ? String(equipment).trim() : null,
         importBatchId: null,
       });
