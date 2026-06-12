@@ -71,7 +71,7 @@ export interface IStorage {
   deleteJobOverride(jobId: string): Promise<void>;
 
   // Workshop board
-  getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null }>>;
+  getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null; accountName: string | null }>>;
   getWorkshopBoardEvents(jobId: string): Promise<WorkshopBoardEvent[]>;
   syncWorkshopBoard(jobSummaries: Array<{ jobId: string; status: string; jobType: string | null; isWorkshop: boolean }>): Promise<void>;
   moveWorkshopBoardCard(input: { jobId: string; toLane: WorkshopLane; laneOrder?: number; actor: string; payload?: string | null }): Promise<WorkshopBoardCard>;
@@ -424,15 +424,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Workshop board
-  async getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null }>> {
+  async getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null; accountName: string | null }>> {
     const result = await db
       .select()
       .from(workshopBoardCards)
       .leftJoin(jobs, eq(workshopBoardCards.jobId, jobs.jobId))
+      .leftJoin(customerAccounts, eq(jobs.accountCode, customerAccounts.accountCode))
       .where(isNull(workshopBoardCards.archivedAt))
       .orderBy(asc(workshopBoardCards.boardLane), asc(workshopBoardCards.laneOrder), asc(workshopBoardCards.updatedAt));
 
-    return result.map((row) => ({ card: row.workshop_board_cards, job: row.jobs ?? null }));
+    return result.map((row) => ({
+      card: row.workshop_board_cards,
+      job: row.jobs ?? null,
+      accountName: row.customer_accounts?.accountName ?? null,
+    }));
   }
 
   async getWorkshopBoardEvents(jobId: string): Promise<WorkshopBoardEvent[]> {

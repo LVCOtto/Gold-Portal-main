@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { ExternalLink, Loader2, Mail, MoveRight, PackageSearch, ShieldAlert } from "lucide-react";
+import { ExternalLink, Loader2, Mail, MoveRight, PackageSearch, ShieldAlert, Wrench } from "lucide-react";
 import { AdminLayout } from "@/components/admin-layout";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -46,6 +47,7 @@ type WorkshopBoardResponseItem = {
     dueDate: string | null;
     equipment: string | null;
   } | null;
+  accountName: string | null;
 };
 
 type PendingMove = {
@@ -61,6 +63,70 @@ const laneConfig: Array<{ key: WorkshopLane; label: string; description: string 
   { key: "awaiting_parts", label: "Awaiting Parts", description: "Waiting on parts before work can continue." },
   { key: "repair_completed", label: "Repair Completed", description: "Ready for collection, dispatch, or return to site." },
 ];
+
+const laneAccentClass: Record<WorkshopLane, { stripe: string; panel: string; glow: string; badge: string }> = {
+  entry: {
+    stripe: "from-[#8d6d2d] to-[#c59b3f]",
+    panel: "border-[#d7c08a] bg-[#fbf6ea] dark:border-[#6b5a2b] dark:bg-[#231d12]",
+    glow: "shadow-[0_20px_40px_-24px_rgba(197,155,63,0.65)]",
+    badge: "bg-[#efe0bb] text-[#6f5316] dark:bg-[#3a2e15] dark:text-[#f4dea3]",
+  },
+  booked_in: {
+    stripe: "from-[#ae6f13] to-[#e0a73a]",
+    panel: "border-[#dfbf83] bg-[#fff6e7] dark:border-[#7a5a1d] dark:bg-[#261c0d]",
+    glow: "shadow-[0_20px_40px_-24px_rgba(224,167,58,0.65)]",
+    badge: "bg-[#f3debb] text-[#7a4d07] dark:bg-[#462f0d] dark:text-[#ffd995]",
+  },
+  on_the_bench: {
+    stripe: "from-[#9f4316] to-[#df7447]",
+    panel: "border-[#e0b29d] bg-[#fff0ea] dark:border-[#7e3d25] dark:bg-[#291711]",
+    glow: "shadow-[0_20px_40px_-24px_rgba(223,116,71,0.7)]",
+    badge: "bg-[#f6d7ca] text-[#8a3913] dark:bg-[#4f2417] dark:text-[#ffc2a7]",
+  },
+  quoted: {
+    stripe: "from-[#8f2349] to-[#d9517d]",
+    panel: "border-[#e3adc1] bg-[#fff0f5] dark:border-[#7b2d4b] dark:bg-[#28131a]",
+    glow: "shadow-[0_20px_40px_-24px_rgba(217,81,125,0.65)]",
+    badge: "bg-[#f6d3df] text-[#8d244d] dark:bg-[#4f1b2e] dark:text-[#ffbfd2]",
+  },
+  awaiting_parts: {
+    stripe: "from-[#4d49aa] to-[#837de8]",
+    panel: "border-[#b6b2ef] bg-[#f3f2ff] dark:border-[#4d4a88] dark:bg-[#171626]",
+    glow: "shadow-[0_20px_40px_-24px_rgba(131,125,232,0.75)]",
+    badge: "bg-[#dbdafb] text-[#403c96] dark:bg-[#282657] dark:text-[#d1d0ff]",
+  },
+  repair_completed: {
+    stripe: "from-[#1f7a46] to-[#41b26d]",
+    panel: "border-[#a8dbba] bg-[#eefaf1] dark:border-[#2b6f45] dark:bg-[#122117]",
+    glow: "shadow-[0_20px_40px_-24px_rgba(65,178,109,0.7)]",
+    badge: "bg-[#d2f0dc] text-[#1d723f] dark:bg-[#183722] dark:text-[#b0eac5]",
+  },
+};
+
+function isInternalLvcAccount(item: WorkshopBoardResponseItem): boolean {
+  const accountText = `${item.accountName || ""} ${item.job?.accountCode || ""}`.toLowerCase();
+  return accountText.includes("lvc");
+}
+
+function getCardTheme(item: WorkshopBoardResponseItem) {
+  if (isInternalLvcAccount(item)) {
+    return {
+      shell: "border-[#2c5f99] bg-[#3f7ec7] text-white shadow-[0_18px_30px_-20px_rgba(37,90,156,0.9)]",
+      tab: "bg-[#2c5f99] text-white",
+      meta: "text-blue-50/85",
+      chip: "bg-white/18 text-white border-white/15",
+      body: "bg-[#5f96d3]/20",
+    };
+  }
+
+  return {
+    shell: "border-[#c89f22] bg-[#f2d25a] text-[#352500] shadow-[0_18px_30px_-20px_rgba(180,133,17,0.95)]",
+    tab: "bg-[#d2a92e] text-[#362400]",
+    meta: "text-[#6b5313]",
+    chip: "bg-[#fff4c2] text-[#5e4709] border-[#d5b245]",
+    body: "bg-[#f6dd7f]/30",
+  };
+}
 
 function formatDate(value: string | null | undefined): string | null {
   if (!value) {
@@ -79,6 +145,7 @@ export default function WorkshopBoardPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
   const [sendClientUpdate, setSendClientUpdate] = useState(true);
   const [message, setMessage] = useState("");
@@ -167,6 +234,24 @@ export default function WorkshopBoardPage() {
   const isAdminUser = user?.type === "admin";
   const Layout = isAdminUser ? AdminLayout : WorkshopLayout;
 
+  const boardStats = useMemo(() => ({
+    total: board?.length || 0,
+    partsLane: boardByLane.get("awaiting_parts")?.length || 0,
+    ready: boardByLane.get("repair_completed")?.length || 0,
+  }), [board, boardByLane]);
+
+  const selectedItem = useMemo(() => {
+    if (!selectedJobId) {
+      return null;
+    }
+
+    return (board || []).find((item) => item.card.jobId === selectedJobId) || null;
+  }, [board, selectedJobId]);
+
+  const selectedLane = selectedItem ? laneConfig.find((lane) => lane.key === selectedItem.card.boardLane) || null : null;
+  const selectedTheme = selectedItem ? getCardTheme(selectedItem) : null;
+  const selectedPartsEta = selectedItem ? formatDate(selectedItem.card.partsEtaOverride || selectedItem.job?.dueDate || null) : null;
+
   function openMoveDialog(item: WorkshopBoardResponseItem, lane: WorkshopLane) {
     if (item.card.boardLane === lane) {
       return;
@@ -185,9 +270,23 @@ export default function WorkshopBoardPage() {
             <h1 className="text-2xl font-semibold" data-testid="text-page-title">Workshop Board</h1>
             <p className="text-muted-foreground mt-1">Operational T-card board for active workshop jobs.</p>
           </div>
+          <div className="flex flex-wrap gap-3 text-sm">
+            <div className="rounded-full border bg-card px-4 py-2 shadow-sm">
+              <span className="text-muted-foreground">Active cards</span>
+              <span className="ml-2 font-semibold">{boardStats.total}</span>
+            </div>
+            <div className="rounded-full border bg-card px-4 py-2 shadow-sm">
+              <span className="text-muted-foreground">Awaiting parts</span>
+              <span className="ml-2 font-semibold">{boardStats.partsLane}</span>
+            </div>
+            <div className="rounded-full border bg-card px-4 py-2 shadow-sm">
+              <span className="text-muted-foreground">Ready to return</span>
+              <span className="ml-2 font-semibold">{boardStats.ready}</span>
+            </div>
+          </div>
         </div>
 
-        <Card>
+        <Card className="overflow-hidden border-border/80 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.95),_rgba(241,244,248,0.78)_42%,_rgba(232,236,242,0.95))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(28,34,45,0.98),_rgba(18,23,32,0.96)_42%,_rgba(10,14,21,1))]">
           <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -196,6 +295,9 @@ export default function WorkshopBoardPage() {
               </div>
               <p className="text-sm text-muted-foreground">
                 While enabled, all workshop status updates are routed to {demoRecipient} instead of the customer.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Yellow cards are the default workshop jobs. Blue cards are internal LVC jobs. Click a T-card to open the full detail.
               </p>
             </div>
             <div className="flex items-center gap-3 self-start lg:self-center">
@@ -220,118 +322,218 @@ export default function WorkshopBoardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 xl:grid-cols-3 2xl:grid-cols-6">
-          {laneConfig.map((lane) => {
-            const items = boardByLane.get(lane.key) || [];
-            return (
-              <section
-                key={lane.key}
-                className="min-h-[220px] rounded-xl border border-border/70 bg-card/40 p-3"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => {
-                  if (!draggedJobId) {
-                    return;
-                  }
-                  const item = (board || []).find((entry) => entry.card.jobId === draggedJobId);
-                  if (item) {
-                    openMoveDialog(item, lane.key);
-                  }
-                  setDraggedJobId(null);
-                }}
-                data-testid={`lane-${lane.key}`}
-              >
-                <div className="mb-3 space-y-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">{lane.label}</h2>
-                    <Badge variant="secondary">{items.length}</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{lane.description}</p>
-                </div>
-
-                <div className="space-y-3">
-                  {boardLoading ? (
-                    <Card className="border-dashed">
-                      <CardContent className="flex items-center justify-center p-4 text-sm text-muted-foreground">
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading cards
-                      </CardContent>
-                    </Card>
-                  ) : items.length === 0 ? (
-                    <Card className="border-dashed bg-background/60">
-                      <CardContent className="p-4 text-sm text-muted-foreground">No jobs in this lane.</CardContent>
-                    </Card>
-                  ) : (
-                    items.map((item) => {
-                      const partsEta = formatDate(item.card.partsEtaOverride || item.job?.dueDate || null);
-                      return (
-                        <Card
-                          key={item.card.jobId}
-                          draggable
-                          onDragStart={() => setDraggedJobId(item.card.jobId)}
-                          onDragEnd={() => setDraggedJobId(null)}
-                          className="cursor-grab border-border/70 bg-background/95 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                          data-testid={`card-workshop-${item.card.jobId}`}
-                        >
-                          <CardHeader className="space-y-3 pb-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <CardTitle className="text-base">{item.card.jobId}</CardTitle>
-                                <CardDescription>{item.job?.accountCode || "Unknown account"}</CardDescription>
-                              </div>
-                              {isAdminUser && item.job ? (
-                                <a
-                                  href={`/admin/customer/${encodeURIComponent(item.job.accountCode)}/jobs/${encodeURIComponent(item.job.jobId)}`}
-                                  className="text-muted-foreground transition hover:text-foreground"
-                                  data-testid={`link-workshop-live-job-${item.card.jobId}`}
-                                >
-                                  <ExternalLink className="h-4 w-4" />
-                                </a>
-                              ) : null}
-                            </div>
-                            <div className="space-y-1 text-sm">
-                              <p className="font-medium leading-snug">{item.job?.siteName || "Job no longer present in live data"}</p>
-                              <p className="text-muted-foreground">{item.job?.shortDescription || item.card.sourceJobType || "Workshop job"}</p>
-                            </div>
-                          </CardHeader>
-                          <CardContent className="space-y-3 pt-0 text-sm">
-                            <div className="flex flex-wrap gap-2">
-                              <Badge variant="outline">{item.job?.status || item.card.sourceStatusAtLastSync || "Unknown"}</Badge>
-                              {item.job?.engineerName ? <Badge variant="secondary">{item.job.engineerName}</Badge> : null}
-                            </div>
-                            {partsEta && item.card.boardLane === "awaiting_parts" ? (
-                              <div className="rounded-md bg-amber-50 px-3 py-2 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                                ETA: {partsEta}
-                              </div>
-                            ) : null}
-                            {item.card.lastEmailOutcome ? (
-                              <div className="text-xs text-muted-foreground">
-                                Last update: {item.card.lastEmailOutcome}
-                              </div>
-                            ) : null}
-                            <div className="grid gap-2">
-                              {laneConfig.filter((targetLane) => targetLane.key !== item.card.boardLane).slice(0, 3).map((targetLane) => (
-                                <Button
-                                  key={targetLane.key}
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="justify-between px-3"
-                                  onClick={() => openMoveDialog(item, targetLane.key)}
-                                  data-testid={`button-move-${item.card.jobId}-${targetLane.key}`}
-                                >
-                                  <span>Move to {targetLane.label}</span>
-                                  <MoveRight className="h-4 w-4" />
-                                </Button>
-                              ))}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })
+        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.65fr)_380px]">
+          <div className="grid gap-4 xl:grid-cols-3 2xl:grid-cols-3">
+            {laneConfig.map((lane) => {
+              const items = boardByLane.get(lane.key) || [];
+              const accent = laneAccentClass[lane.key];
+              return (
+                <section
+                  key={lane.key}
+                  className={cn(
+                    "min-h-[360px] rounded-[22px] border p-3 backdrop-blur-sm transition-all",
+                    accent.panel,
+                    accent.glow,
                   )}
-                </div>
-              </section>
-            );
-          })}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => {
+                    if (!draggedJobId) {
+                      return;
+                    }
+                    const item = (board || []).find((entry) => entry.card.jobId === draggedJobId);
+                    if (item) {
+                      openMoveDialog(item, lane.key);
+                    }
+                    setDraggedJobId(null);
+                  }}
+                  data-testid={`lane-${lane.key}`}
+                >
+                  <div className="mb-3 rounded-[18px] border border-black/5 bg-white/45 p-3 dark:border-white/10 dark:bg-black/15">
+                    <div className={cn("mb-3 h-2.5 rounded-full bg-gradient-to-r", accent.stripe)} />
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-foreground">{lane.label}</h2>
+                        <p className="mt-1 text-xs text-muted-foreground">{lane.description}</p>
+                      </div>
+                      <Badge className={cn("border-0 font-semibold", accent.badge)}>{items.length}</Badge>
+                    </div>
+                  </div>
+
+                  <div className="relative space-y-0 pb-3">
+                    {boardLoading ? (
+                      <Card className="border-dashed">
+                        <CardContent className="flex items-center justify-center p-4 text-sm text-muted-foreground">
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading cards
+                        </CardContent>
+                      </Card>
+                    ) : items.length === 0 ? (
+                      <Card className="border-dashed bg-background/60">
+                        <CardContent className="p-4 text-sm text-muted-foreground">No jobs in this lane.</CardContent>
+                      </Card>
+                    ) : (
+                      items.map((item, index) => {
+                        const isSelected = selectedJobId === item.card.jobId;
+                        const theme = getCardTheme(item);
+                        return (
+                          <button
+                            key={item.card.jobId}
+                            type="button"
+                            draggable
+                            onClick={() => setSelectedJobId((current) => current === item.card.jobId ? null : item.card.jobId)}
+                            onDragStart={() => setDraggedJobId(item.card.jobId)}
+                            onDragEnd={() => setDraggedJobId(null)}
+                            className={cn(
+                              "group relative block h-[76px] w-full overflow-hidden rounded-[18px] border text-left transition-all duration-200 ease-out focus:outline-none focus:ring-2 focus:ring-primary/50",
+                              theme.shell,
+                              "-mt-10 cursor-pointer hover:-translate-y-1 hover:shadow-[0_18px_32px_-24px_rgba(0,0,0,0.45)]",
+                              index === 0 && "mt-0",
+                              isSelected && "translate-y-1 ring-2 ring-white/70 shadow-[0_22px_40px_-24px_rgba(0,0,0,0.45)] dark:ring-white/30",
+                            )}
+                            style={{ zIndex: isSelected ? 30 : items.length - index }}
+                            data-testid={`card-workshop-${item.card.jobId}`}
+                          >
+                            <div className={cn("border-b px-4 py-3", theme.tab)}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-[0.7rem] uppercase tracking-[0.2em] opacity-70">Job</div>
+                                  <div className="truncate text-base font-semibold">{item.card.jobId}</div>
+                                  <div className="truncate text-sm opacity-85">{item.job?.siteName || "Job not in live import"}</div>
+                                </div>
+                                {isAdminUser && item.job ? (
+                                  <a
+                                    href={`/admin/customer/${encodeURIComponent(item.job.accountCode)}/jobs/${encodeURIComponent(item.job.jobId)}`}
+                                    className="mt-1 shrink-0 rounded-full bg-black/10 p-2 transition hover:bg-black/20"
+                                    onClick={(event) => event.stopPropagation()}
+                                    data-testid={`link-workshop-live-job-${item.card.jobId}`}
+                                  >
+                                    <ExternalLink className="h-4 w-4" />
+                                  </a>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className={cn("flex items-center justify-between gap-3 px-4 pb-4 pt-3 text-xs", theme.body, theme.meta)}>
+                              <div className="truncate">{item.accountName || item.job?.accountCode || "Unknown account"}</div>
+                              <div className="flex items-center gap-1 opacity-85">
+                                <Wrench className="h-3.5 w-3.5" />
+                                <span>{isSelected ? "Selected" : "Tap to open"}</span>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+
+          <aside className="2xl:sticky 2xl:top-6 2xl:self-start">
+            <Card className="overflow-hidden border-border/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(243,246,250,0.88))] shadow-[0_24px_50px_-30px_rgba(15,23,42,0.4)] dark:bg-[linear-gradient(145deg,rgba(24,29,39,0.98),rgba(14,18,26,0.98))]">
+              {selectedItem && selectedTheme ? (
+                <>
+                  <div className={cn("border-b px-5 py-5", selectedTheme.tab)}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[0.72rem] uppercase tracking-[0.22em] opacity-70">Selected T-card</div>
+                        <div className="mt-1 text-2xl font-semibold leading-tight">{selectedItem.card.jobId}</div>
+                        <div className="truncate text-sm opacity-85">{selectedItem.job?.siteName || "Job not in live import"}</div>
+                      </div>
+                      <Badge className={cn("border text-xs font-semibold", selectedTheme.chip)}>
+                        {selectedLane?.label || "Workshop"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <CardContent className="space-y-5 p-5">
+                    <div className="space-y-1">
+                      <div className="text-lg font-semibold">{selectedItem.accountName || selectedItem.job?.accountCode || "Unknown account"}</div>
+                      <p className="text-sm text-muted-foreground">{selectedItem.job?.shortDescription || selectedItem.card.sourceJobType || "Workshop job"}</p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Badge className={cn("border text-xs font-medium", selectedTheme.chip)}>{selectedItem.job?.status || selectedItem.card.sourceStatusAtLastSync || "Unknown"}</Badge>
+                      {selectedItem.job?.engineerName ? <Badge className={cn("border text-xs font-medium", selectedTheme.chip)}>{selectedItem.job.engineerName}</Badge> : null}
+                      {isInternalLvcAccount(selectedItem) ? <Badge className={cn("border text-xs font-medium", selectedTheme.chip)}>Internal LVC</Badge> : null}
+                    </div>
+
+                    {selectedPartsEta && selectedItem.card.boardLane === "awaiting_parts" ? (
+                      <div className="rounded-xl border border-border/80 bg-muted/50 px-4 py-3 text-sm">
+                        <div className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Parts ETA</div>
+                        <div className="mt-1 font-semibold">{selectedPartsEta}</div>
+                      </div>
+                    ) : null}
+
+                    <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-1">
+                      <div className="rounded-xl border border-border/80 bg-muted/35 p-4">
+                        <div className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Account Code</div>
+                        <div className="mt-1 font-medium">{selectedItem.job?.accountCode || "Unknown"}</div>
+                      </div>
+                      <div className="rounded-xl border border-border/80 bg-muted/35 p-4">
+                        <div className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Equipment</div>
+                        <div className="mt-1 font-medium">{selectedItem.job?.equipment || selectedItem.job?.shortDescription || "Not listed"}</div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-border/80 bg-muted/35 p-4">
+                      <div className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Status Trace</div>
+                      <div className="mt-2 space-y-2 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Board lane</span>
+                          <span className="font-medium">{selectedLane?.label || "Unknown"}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Portal status</span>
+                          <span className="text-right font-medium">{selectedItem.job?.sourcePortalStatus || selectedItem.card.sourceStatusAtLastSync || "Unknown"}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Updated</span>
+                          <span className="font-medium">{formatDate(selectedItem.card.updatedAt) || "Unknown"}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedItem.card.lastEmailOutcome ? (
+                      <div className="rounded-xl border border-border/80 bg-muted/35 p-4 text-sm">
+                        <div className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Last Update</div>
+                        <div className="mt-2">{selectedItem.card.lastEmailOutcome}</div>
+                      </div>
+                    ) : null}
+
+                    <div className="grid gap-2">
+                      {laneConfig.filter((targetLane) => targetLane.key !== selectedItem.card.boardLane).map((targetLane) => (
+                        <Button
+                          key={targetLane.key}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="justify-between rounded-xl px-3"
+                          onClick={() => openMoveDialog(selectedItem, targetLane.key)}
+                          data-testid={`panel-move-${selectedItem.card.jobId}-${targetLane.key}`}
+                        >
+                          <span>Move to {targetLane.label}</span>
+                          <MoveRight className="h-4 w-4" />
+                        </Button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </>
+              ) : (
+                <CardContent className="flex min-h-[320px] flex-col items-center justify-center gap-4 p-8 text-center">
+                  <div className="rounded-full border border-border/80 bg-muted/40 p-4">
+                    <Wrench className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <CardTitle>Select a T-card</CardTitle>
+                    <CardDescription className="mt-2">
+                      Keep the workshop lanes compact on the left, then use this side panel for the full job detail and move actions.
+                    </CardDescription>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          </aside>
         </div>
 
         <Dialog open={!!pendingMove} onOpenChange={(open) => !open && !moveMutation.isPending && setPendingMove(null)}>
