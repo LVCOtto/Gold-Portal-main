@@ -322,9 +322,9 @@ export default function WorkshopBoardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="overflow-x-auto pb-2">
-            <div className="grid min-w-max grid-flow-col auto-cols-[minmax(240px,1fr)] gap-4 2xl:auto-cols-[minmax(250px,1fr)]">
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="overflow-x-auto pb-2 2xl:overflow-visible">
+            <div className="grid min-w-max grid-flow-col auto-cols-[minmax(210px,1fr)] gap-3 2xl:min-w-0 2xl:grid-flow-row 2xl:grid-cols-6 2xl:auto-cols-auto">
               {laneConfig.map((lane) => {
                 const items = boardByLane.get(lane.key) || [];
                 const accent = laneAccentClass[lane.key];
@@ -332,7 +332,7 @@ export default function WorkshopBoardPage() {
                   <section
                     key={lane.key}
                     className={cn(
-                      "min-h-[360px] rounded-[22px] border p-3 backdrop-blur-sm transition-all",
+                      "min-h-[360px] rounded-[20px] border p-2.5 backdrop-blur-sm transition-all",
                       accent.panel,
                       accent.glow,
                     )}
@@ -349,12 +349,12 @@ export default function WorkshopBoardPage() {
                     }}
                     data-testid={`lane-${lane.key}`}
                   >
-                    <div className="mb-3 rounded-[18px] border border-black/5 bg-white/45 p-3 dark:border-white/10 dark:bg-black/15">
-                      <div className={cn("mb-3 h-2.5 rounded-full bg-gradient-to-r", accent.stripe)} />
+                    <div className="mb-2.5 rounded-[16px] border border-black/5 bg-white/45 p-2.5 dark:border-white/10 dark:bg-black/15">
+                      <div className={cn("mb-2 h-2 rounded-full bg-gradient-to-r", accent.stripe)} />
                       <div className="flex items-center justify-between gap-2">
                         <div>
-                          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-foreground">{lane.label}</h2>
-                          <p className="mt-1 text-xs text-muted-foreground">{lane.description}</p>
+                          <h2 className="text-[0.78rem] font-semibold uppercase tracking-[0.14em] text-foreground">{lane.label}</h2>
+                          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{lane.description}</p>
                         </div>
                         <Badge className={cn("border-0 font-semibold", accent.badge)}>{items.length}</Badge>
                       </div>
@@ -384,7 +384,7 @@ export default function WorkshopBoardPage() {
                               onDragStart={() => setDraggedJobId(item.card.jobId)}
                               onDragEnd={() => setDraggedJobId(null)}
                               className={cn(
-                                "group relative block h-[76px] w-full overflow-hidden rounded-[18px] border text-left transition-all duration-200 ease-out focus:outline-none focus:ring-2 focus:ring-primary/50",
+                                "group relative block h-[72px] w-full overflow-hidden rounded-[16px] border text-left transition-all duration-200 ease-out focus:outline-none focus:ring-2 focus:ring-primary/50",
                                 theme.shell,
                                 "-mt-10 cursor-pointer hover:-translate-y-1 hover:shadow-[0_18px_32px_-24px_rgba(0,0,0,0.45)]",
                                 index === 0 && "mt-0",
@@ -393,27 +393,27 @@ export default function WorkshopBoardPage() {
                               style={{ zIndex: isSelected ? 30 : items.length - index }}
                               data-testid={`card-workshop-${item.card.jobId}`}
                             >
-                              <div className={cn("border-b px-4 py-3", theme.tab)}>
+                              <div className={cn("border-b px-3 py-2.5", theme.tab)}>
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
                                     <div className="text-[0.7rem] uppercase tracking-[0.2em] opacity-70">Job</div>
-                                    <div className="truncate text-base font-semibold">{item.card.jobId}</div>
-                                    <div className="truncate text-sm opacity-85">{item.job?.siteName || "Job not in live import"}</div>
+                                    <div className="truncate text-[0.95rem] font-semibold leading-tight">{item.card.jobId}</div>
+                                    <div className="truncate text-[0.78rem] leading-tight opacity-85">{item.job?.siteName || "Job not in live import"}</div>
                                   </div>
                                   {isAdminUser && item.job ? (
                                     <a
                                       href={`/admin/customer/${encodeURIComponent(item.job.accountCode)}/jobs/${encodeURIComponent(item.job.jobId)}`}
-                                      className="mt-1 shrink-0 rounded-full bg-black/10 p-2 transition hover:bg-black/20"
+                                      className="mt-0.5 shrink-0 rounded-full bg-black/10 p-1.5 transition hover:bg-black/20"
                                       onClick={(event) => event.stopPropagation()}
                                       data-testid={`link-workshop-live-job-${item.card.jobId}`}
                                     >
-                                      <ExternalLink className="h-4 w-4" />
+                                      <ExternalLink className="h-3.5 w-3.5" />
                                     </a>
                                   ) : null}
                                 </div>
                               </div>
 
-                              <div className={cn("flex items-center justify-between gap-3 px-4 pb-4 pt-3 text-xs", theme.body, theme.meta)}>
+                              <div className={cn("flex items-center justify-between gap-2 px-3 pb-3 pt-2 text-[11px]", theme.body, theme.meta)}>
                                 <div className="truncate">{item.accountName || item.job?.accountCode || "Unknown account"}</div>
                                 <div className="flex items-center gap-1 opacity-85">
                                   <Wrench className="h-3.5 w-3.5" />
