@@ -66,40 +66,40 @@ const laneConfig: Array<{ key: WorkshopLane; label: string; description: string 
 
 const laneAccentClass: Record<WorkshopLane, { stripe: string; panel: string; glow: string; badge: string }> = {
   entry: {
-    stripe: "from-[#8d6d2d] to-[#c59b3f]",
-    panel: "border-[#d7c08a] bg-[#fbf6ea] dark:border-[#6b5a2b] dark:bg-[#231d12]",
-    glow: "shadow-[0_20px_40px_-24px_rgba(197,155,63,0.65)]",
-    badge: "bg-[#efe0bb] text-[#6f5316] dark:bg-[#3a2e15] dark:text-[#f4dea3]",
+    stripe: "from-[#d7c693] to-[#eadfb8]",
+    panel: "border-[#e6dcc2] bg-[#fbf8f1] dark:border-[#645a45] dark:bg-[#211d16]",
+    glow: "shadow-[0_18px_36px_-26px_rgba(170,149,95,0.28)]",
+    badge: "bg-[#efe7d3] text-[#746348] dark:bg-[#332c1f] dark:text-[#ebdfc4]",
   },
   booked_in: {
-    stripe: "from-[#ae6f13] to-[#e0a73a]",
-    panel: "border-[#dfbf83] bg-[#fff6e7] dark:border-[#7a5a1d] dark:bg-[#261c0d]",
-    glow: "shadow-[0_20px_40px_-24px_rgba(224,167,58,0.65)]",
-    badge: "bg-[#f3debb] text-[#7a4d07] dark:bg-[#462f0d] dark:text-[#ffd995]",
+    stripe: "from-[#dec79d] to-[#efe1bf]",
+    panel: "border-[#e7dbc3] bg-[#fdf8ef] dark:border-[#67583d] dark:bg-[#221c13]",
+    glow: "shadow-[0_18px_36px_-26px_rgba(177,144,84,0.3)]",
+    badge: "bg-[#f3e7cf] text-[#786242] dark:bg-[#352b1c] dark:text-[#f0e0bf]",
   },
   on_the_bench: {
-    stripe: "from-[#9f4316] to-[#df7447]",
-    panel: "border-[#e0b29d] bg-[#fff0ea] dark:border-[#7e3d25] dark:bg-[#291711]",
-    glow: "shadow-[0_20px_40px_-24px_rgba(223,116,71,0.7)]",
-    badge: "bg-[#f6d7ca] text-[#8a3913] dark:bg-[#4f2417] dark:text-[#ffc2a7]",
+    stripe: "from-[#dcbcab] to-[#efdbcf]",
+    panel: "border-[#e8d4cb] bg-[#fdf6f3] dark:border-[#684a40] dark:bg-[#231916]",
+    glow: "shadow-[0_18px_36px_-26px_rgba(168,117,90,0.26)]",
+    badge: "bg-[#f1ddd3] text-[#7d5a4d] dark:bg-[#352520] dark:text-[#eed1c4]",
   },
   quoted: {
-    stripe: "from-[#8f2349] to-[#d9517d]",
-    panel: "border-[#e3adc1] bg-[#fff0f5] dark:border-[#7b2d4b] dark:bg-[#28131a]",
-    glow: "shadow-[0_20px_40px_-24px_rgba(217,81,125,0.65)]",
-    badge: "bg-[#f6d3df] text-[#8d244d] dark:bg-[#4f1b2e] dark:text-[#ffbfd2]",
+    stripe: "from-[#d7b9c4] to-[#eed8df]",
+    panel: "border-[#e7d0d7] bg-[#fcf6f8] dark:border-[#674956] dark:bg-[#22181d]",
+    glow: "shadow-[0_18px_36px_-26px_rgba(160,110,129,0.24)]",
+    badge: "bg-[#f0dde3] text-[#775864] dark:bg-[#33242a] dark:text-[#edd4dd]",
   },
   awaiting_parts: {
-    stripe: "from-[#4d49aa] to-[#837de8]",
-    panel: "border-[#b6b2ef] bg-[#f3f2ff] dark:border-[#4d4a88] dark:bg-[#171626]",
-    glow: "shadow-[0_20px_40px_-24px_rgba(131,125,232,0.75)]",
-    badge: "bg-[#dbdafb] text-[#403c96] dark:bg-[#282657] dark:text-[#d1d0ff]",
+    stripe: "from-[#b8cbe7] to-[#dce7f6]",
+    panel: "border-[#d5e0ee] bg-[#f5f8fc] dark:border-[#4a586e] dark:bg-[#161b22]",
+    glow: "shadow-[0_18px_36px_-26px_rgba(110,137,178,0.26)]",
+    badge: "bg-[#dde8f4] text-[#54667d] dark:bg-[#24303d] dark:text-[#d8e5f4]",
   },
   repair_completed: {
-    stripe: "from-[#1f7a46] to-[#41b26d]",
-    panel: "border-[#a8dbba] bg-[#eefaf1] dark:border-[#2b6f45] dark:bg-[#122117]",
-    glow: "shadow-[0_20px_40px_-24px_rgba(65,178,109,0.7)]",
-    badge: "bg-[#d2f0dc] text-[#1d723f] dark:bg-[#183722] dark:text-[#b0eac5]",
+    stripe: "from-[#b9d7c3] to-[#dbece1]",
+    panel: "border-[#d3e5d8] bg-[#f4faf5] dark:border-[#48614f] dark:bg-[#151d17]",
+    glow: "shadow-[0_18px_36px_-26px_rgba(102,145,116,0.24)]",
+    badge: "bg-[#ddebe1] text-[#58705f] dark:bg-[#243127] dark:text-[#d3e7d8]",
   },
 };
 
@@ -111,20 +111,20 @@ function isInternalLvcAccount(item: WorkshopBoardResponseItem): boolean {
 function getCardTheme(item: WorkshopBoardResponseItem) {
   if (isInternalLvcAccount(item)) {
     return {
-      shell: "border-[#2c5f99] bg-[#3f7ec7] text-white shadow-[0_18px_30px_-20px_rgba(37,90,156,0.9)]",
-      tab: "bg-[#2c5f99] text-white",
-      meta: "text-blue-50/85",
-      chip: "bg-white/18 text-white border-white/15",
-      body: "bg-[#5f96d3]/20",
+      shell: "border-[#b8cde4] bg-[#dce9f6] text-[#2f4862] shadow-[0_18px_30px_-22px_rgba(104,136,172,0.32)]",
+      tab: "bg-[#c9dcee] text-[#2f4862]",
+      meta: "text-[#60758d]",
+      chip: "bg-[#edf4fb] text-[#45607b] border-[#c8d8e8]",
+      body: "bg-[#edf4fb]",
     };
   }
 
   return {
-    shell: "border-[#c89f22] bg-[#f2d25a] text-[#352500] shadow-[0_18px_30px_-20px_rgba(180,133,17,0.95)]",
-    tab: "bg-[#d2a92e] text-[#362400]",
-    meta: "text-[#6b5313]",
-    chip: "bg-[#fff4c2] text-[#5e4709] border-[#d5b245]",
-    body: "bg-[#f6dd7f]/30",
+    shell: "border-[#e2d59f] bg-[#f6efc7] text-[#554a28] shadow-[0_18px_30px_-22px_rgba(166,145,75,0.28)]",
+    tab: "bg-[#efe3ae] text-[#554a28]",
+    meta: "text-[#7a6b41]",
+    chip: "bg-[#fbf5db] text-[#6b5c31] border-[#e2d4a0]",
+    body: "bg-[#fbf6e2]",
   };
 }
 
@@ -322,111 +322,113 @@ export default function WorkshopBoardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.65fr)_380px]">
-          <div className="grid gap-4 xl:grid-cols-3 2xl:grid-cols-3">
-            {laneConfig.map((lane) => {
-              const items = boardByLane.get(lane.key) || [];
-              const accent = laneAccentClass[lane.key];
-              return (
-                <section
-                  key={lane.key}
-                  className={cn(
-                    "min-h-[360px] rounded-[22px] border p-3 backdrop-blur-sm transition-all",
-                    accent.panel,
-                    accent.glow,
-                  )}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => {
-                    if (!draggedJobId) {
-                      return;
-                    }
-                    const item = (board || []).find((entry) => entry.card.jobId === draggedJobId);
-                    if (item) {
-                      openMoveDialog(item, lane.key);
-                    }
-                    setDraggedJobId(null);
-                  }}
-                  data-testid={`lane-${lane.key}`}
-                >
-                  <div className="mb-3 rounded-[18px] border border-black/5 bg-white/45 p-3 dark:border-white/10 dark:bg-black/15">
-                    <div className={cn("mb-3 h-2.5 rounded-full bg-gradient-to-r", accent.stripe)} />
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-foreground">{lane.label}</h2>
-                        <p className="mt-1 text-xs text-muted-foreground">{lane.description}</p>
-                      </div>
-                      <Badge className={cn("border-0 font-semibold", accent.badge)}>{items.length}</Badge>
-                    </div>
-                  </div>
-
-                  <div className="relative space-y-0 pb-3">
-                    {boardLoading ? (
-                      <Card className="border-dashed">
-                        <CardContent className="flex items-center justify-center p-4 text-sm text-muted-foreground">
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading cards
-                        </CardContent>
-                      </Card>
-                    ) : items.length === 0 ? (
-                      <Card className="border-dashed bg-background/60">
-                        <CardContent className="p-4 text-sm text-muted-foreground">No jobs in this lane.</CardContent>
-                      </Card>
-                    ) : (
-                      items.map((item, index) => {
-                        const isSelected = selectedJobId === item.card.jobId;
-                        const theme = getCardTheme(item);
-                        return (
-                          <button
-                            key={item.card.jobId}
-                            type="button"
-                            draggable
-                            onClick={() => setSelectedJobId((current) => current === item.card.jobId ? null : item.card.jobId)}
-                            onDragStart={() => setDraggedJobId(item.card.jobId)}
-                            onDragEnd={() => setDraggedJobId(null)}
-                            className={cn(
-                              "group relative block h-[76px] w-full overflow-hidden rounded-[18px] border text-left transition-all duration-200 ease-out focus:outline-none focus:ring-2 focus:ring-primary/50",
-                              theme.shell,
-                              "-mt-10 cursor-pointer hover:-translate-y-1 hover:shadow-[0_18px_32px_-24px_rgba(0,0,0,0.45)]",
-                              index === 0 && "mt-0",
-                              isSelected && "translate-y-1 ring-2 ring-white/70 shadow-[0_22px_40px_-24px_rgba(0,0,0,0.45)] dark:ring-white/30",
-                            )}
-                            style={{ zIndex: isSelected ? 30 : items.length - index }}
-                            data-testid={`card-workshop-${item.card.jobId}`}
-                          >
-                            <div className={cn("border-b px-4 py-3", theme.tab)}>
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="text-[0.7rem] uppercase tracking-[0.2em] opacity-70">Job</div>
-                                  <div className="truncate text-base font-semibold">{item.card.jobId}</div>
-                                  <div className="truncate text-sm opacity-85">{item.job?.siteName || "Job not in live import"}</div>
-                                </div>
-                                {isAdminUser && item.job ? (
-                                  <a
-                                    href={`/admin/customer/${encodeURIComponent(item.job.accountCode)}/jobs/${encodeURIComponent(item.job.jobId)}`}
-                                    className="mt-1 shrink-0 rounded-full bg-black/10 p-2 transition hover:bg-black/20"
-                                    onClick={(event) => event.stopPropagation()}
-                                    data-testid={`link-workshop-live-job-${item.card.jobId}`}
-                                  >
-                                    <ExternalLink className="h-4 w-4" />
-                                  </a>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            <div className={cn("flex items-center justify-between gap-3 px-4 pb-4 pt-3 text-xs", theme.body, theme.meta)}>
-                              <div className="truncate">{item.accountName || item.job?.accountCode || "Unknown account"}</div>
-                              <div className="flex items-center gap-1 opacity-85">
-                                <Wrench className="h-3.5 w-3.5" />
-                                <span>{isSelected ? "Selected" : "Tap to open"}</span>
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })
+        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="overflow-x-auto pb-2">
+            <div className="grid min-w-max grid-flow-col auto-cols-[minmax(240px,1fr)] gap-4 2xl:auto-cols-[minmax(250px,1fr)]">
+              {laneConfig.map((lane) => {
+                const items = boardByLane.get(lane.key) || [];
+                const accent = laneAccentClass[lane.key];
+                return (
+                  <section
+                    key={lane.key}
+                    className={cn(
+                      "min-h-[360px] rounded-[22px] border p-3 backdrop-blur-sm transition-all",
+                      accent.panel,
+                      accent.glow,
                     )}
-                  </div>
-                </section>
-              );
-            })}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => {
+                      if (!draggedJobId) {
+                        return;
+                      }
+                      const item = (board || []).find((entry) => entry.card.jobId === draggedJobId);
+                      if (item) {
+                        openMoveDialog(item, lane.key);
+                      }
+                      setDraggedJobId(null);
+                    }}
+                    data-testid={`lane-${lane.key}`}
+                  >
+                    <div className="mb-3 rounded-[18px] border border-black/5 bg-white/45 p-3 dark:border-white/10 dark:bg-black/15">
+                      <div className={cn("mb-3 h-2.5 rounded-full bg-gradient-to-r", accent.stripe)} />
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-foreground">{lane.label}</h2>
+                          <p className="mt-1 text-xs text-muted-foreground">{lane.description}</p>
+                        </div>
+                        <Badge className={cn("border-0 font-semibold", accent.badge)}>{items.length}</Badge>
+                      </div>
+                    </div>
+
+                    <div className="relative space-y-0 pb-3">
+                      {boardLoading ? (
+                        <Card className="border-dashed">
+                          <CardContent className="flex items-center justify-center p-4 text-sm text-muted-foreground">
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading cards
+                          </CardContent>
+                        </Card>
+                      ) : items.length === 0 ? (
+                        <Card className="border-dashed bg-background/60">
+                          <CardContent className="p-4 text-sm text-muted-foreground">No jobs in this lane.</CardContent>
+                        </Card>
+                      ) : (
+                        items.map((item, index) => {
+                          const isSelected = selectedJobId === item.card.jobId;
+                          const theme = getCardTheme(item);
+                          return (
+                            <button
+                              key={item.card.jobId}
+                              type="button"
+                              draggable
+                              onClick={() => setSelectedJobId((current) => current === item.card.jobId ? null : item.card.jobId)}
+                              onDragStart={() => setDraggedJobId(item.card.jobId)}
+                              onDragEnd={() => setDraggedJobId(null)}
+                              className={cn(
+                                "group relative block h-[76px] w-full overflow-hidden rounded-[18px] border text-left transition-all duration-200 ease-out focus:outline-none focus:ring-2 focus:ring-primary/50",
+                                theme.shell,
+                                "-mt-10 cursor-pointer hover:-translate-y-1 hover:shadow-[0_18px_32px_-24px_rgba(0,0,0,0.45)]",
+                                index === 0 && "mt-0",
+                                isSelected && "translate-y-1 ring-2 ring-white/70 shadow-[0_22px_40px_-24px_rgba(0,0,0,0.45)] dark:ring-white/30",
+                              )}
+                              style={{ zIndex: isSelected ? 30 : items.length - index }}
+                              data-testid={`card-workshop-${item.card.jobId}`}
+                            >
+                              <div className={cn("border-b px-4 py-3", theme.tab)}>
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="text-[0.7rem] uppercase tracking-[0.2em] opacity-70">Job</div>
+                                    <div className="truncate text-base font-semibold">{item.card.jobId}</div>
+                                    <div className="truncate text-sm opacity-85">{item.job?.siteName || "Job not in live import"}</div>
+                                  </div>
+                                  {isAdminUser && item.job ? (
+                                    <a
+                                      href={`/admin/customer/${encodeURIComponent(item.job.accountCode)}/jobs/${encodeURIComponent(item.job.jobId)}`}
+                                      className="mt-1 shrink-0 rounded-full bg-black/10 p-2 transition hover:bg-black/20"
+                                      onClick={(event) => event.stopPropagation()}
+                                      data-testid={`link-workshop-live-job-${item.card.jobId}`}
+                                    >
+                                      <ExternalLink className="h-4 w-4" />
+                                    </a>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div className={cn("flex items-center justify-between gap-3 px-4 pb-4 pt-3 text-xs", theme.body, theme.meta)}>
+                                <div className="truncate">{item.accountName || item.job?.accountCode || "Unknown account"}</div>
+                                <div className="flex items-center gap-1 opacity-85">
+                                  <Wrench className="h-3.5 w-3.5" />
+                                  <span>{isSelected ? "Selected" : "Tap to open"}</span>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
           </div>
 
           <aside className="2xl:sticky 2xl:top-6 2xl:self-start">
