@@ -28,6 +28,9 @@ export const jobs = pgTable("jobs", {
   accountCode: text("account_code").notNull(),
   siteName: text("site_name").notNull(),
   status: text("status").notNull(),
+  sourcePortalStatus: text("source_portal_status"),
+  jobType: text("job_type"),
+  isWorkshop: boolean("is_workshop").notNull().default(false),
   createdDate: timestamp("created_date").notNull(),
   lastUpdatedDate: timestamp("last_updated_date").notNull(),
   shortDescription: text("short_description").notNull(),
@@ -174,6 +177,36 @@ export const jobOverridesRelations = relations(jobOverrides, ({ one }) => ({
   }),
 }));
 
+export const workshopBoardCards = pgTable("workshop_board_cards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: text("job_id").notNull().unique(),
+  boardLane: text("board_lane").notNull().default("entry"),
+  laneOrder: integer("lane_order").notNull().default(0),
+  sourceStatusAtLastSync: text("source_status_at_last_sync"),
+  sourceJobType: text("source_job_type"),
+  lastSeenInImportAt: timestamp("last_seen_in_import_at").defaultNow().notNull(),
+  archivedAt: timestamp("archived_at"),
+  movedBy: text("moved_by"),
+  movedAt: timestamp("moved_at"),
+  lastEmailSentAt: timestamp("last_email_sent_at"),
+  lastEmailOutcome: text("last_email_outcome"),
+  partsEtaOverride: timestamp("parts_eta_override"),
+  internalNotes: text("internal_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const workshopBoardEvents = pgTable("workshop_board_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: text("job_id").notNull(),
+  eventType: text("event_type").notNull(),
+  fromLane: text("from_lane"),
+  toLane: text("to_lane"),
+  actor: text("actor").notNull(),
+  payload: text("payload"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // System Settings (for last import timestamp)
 export const systemSettings = pgTable("system_settings", {
   key: text("key").primaryKey(),
@@ -227,6 +260,17 @@ export const insertJobOverrideSchema = createInsertSchema(jobOverrides).omit({
   updatedAt: true,
 });
 
+export const insertWorkshopBoardCardSchema = createInsertSchema(workshopBoardCards).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertWorkshopBoardEventSchema = createInsertSchema(workshopBoardEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({
   id: true,
   createdAt: true,
@@ -254,10 +298,58 @@ export type InsertApprovalEvent = z.infer<typeof insertApprovalEventSchema>;
 export type JobOverride = typeof jobOverrides.$inferSelect;
 export type InsertJobOverride = z.infer<typeof insertJobOverrideSchema>;
 
+export type WorkshopBoardCard = typeof workshopBoardCards.$inferSelect;
+export type InsertWorkshopBoardCard = z.infer<typeof insertWorkshopBoardCardSchema>;
+
+export type WorkshopBoardEvent = typeof workshopBoardEvents.$inferSelect;
+export type InsertWorkshopBoardEvent = z.infer<typeof insertWorkshopBoardEventSchema>;
+
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
+
+export const WORKSHOP_LANES = [
+  "entry",
+  "booked_in",
+  "on_the_bench",
+  "quoted",
+  "awaiting_parts",
+  "repair_completed",
+] as const;
+
+export type WorkshopLane = typeof WORKSHOP_LANES[number];
+
+export const WORKSHOP_LANE_LABELS: Record<WorkshopLane, string> = {
+  entry: "Entry",
+  booked_in: "Booked In",
+  on_the_bench: "On The Bench",
+  quoted: "Quoted",
+  awaiting_parts: "Awaiting Parts",
+  repair_completed: "Repair Completed",
+};
+
+export function isWorkshopLane(value: string): value is WorkshopLane {
+  return (WORKSHOP_LANES as readonly string[]).includes(value);
+}
+
+export function getDefaultWorkshopLane(rawStatus: string): WorkshopLane {
+  const normalized = rawStatus.toLowerCase();
+
+  if (normalized.includes("awaiting parts") || normalized.includes("parts ordered") || normalized.includes("parts on order")) {
+    return "awaiting_parts";
+  }
+
+  if (normalized.includes("quoted") || normalized.includes("quote") || normalized.includes("approval")) {
+    return "quoted";
+  }
+
+  if (normalized.includes("completed") || normalized.includes("ready for collection") || normalized.includes("collection") || normalized.includes("return to site")) {
+    return "repair_completed";
+  }
+
+  return "entry";
+}
 
 // Status Mapping
 export const STATUS_MAPPING: Record<string, { label: string; lane: string; color: string }> = {

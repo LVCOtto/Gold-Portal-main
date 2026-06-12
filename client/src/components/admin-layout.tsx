@@ -2,7 +2,7 @@ import { type ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   Menu, LogOut, Users, 
-  LayoutDashboard, ChevronLeft, Settings, ExternalLink 
+  LayoutDashboard, ChevronLeft, Settings, ExternalLink, Workflow 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -19,6 +19,7 @@ interface AdminLayoutProps {
 const navItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/admin/accounts", label: "Accounts", icon: Users },
+  { href: "/admin/workshop", label: "Workshop", icon: Workflow },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 

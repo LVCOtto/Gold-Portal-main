@@ -15,6 +15,7 @@ import QuotesPage from "@/pages/quotes";
 import QuoteDetailPage from "@/pages/quote-detail";
 import AdminDashboard from "@/pages/admin/index";
 import AdminAccountsPage from "@/pages/admin/accounts";
+import WorkshopBoardPage from "@/pages/admin/workshop-board";
 import { AdminCustomerPortalRoute } from "@/pages/admin/customer-portal-route";
 import AdminSettingsPage from "@/pages/admin/settings";
 import ChangePasswordPage from "@/pages/change-password";
@@ -128,6 +129,11 @@ function Router() {
       <Route path="/admin/accounts">
         <ProtectedRoute requiredType="admin">
           <AdminAccountsPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/workshop">
+        <ProtectedRoute requiredType="admin">
+          <WorkshopBoardPage />
         </ProtectedRoute>
       </Route>
       <Route path="/admin/customer/:accountCode/jobs/:jobId">

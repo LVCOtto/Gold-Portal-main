@@ -13,8 +13,14 @@ import fs from "fs";
 import crypto from "crypto";
 import { z } from "zod";
 import { parse as dateFnsParse, isValid as isValidDate } from "date-fns";
+import { getDefaultWorkshopLane, isWorkshopLane } from "@shared/schema";
 import { storage } from "./storage";
 import { pool } from "./db";
+
+const workshopJobTypeMatchers = (process.env.WORKSHOP_JOB_TYPE_MATCHES || "workshop")
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
 
 // Helper function to convert Excel serial date to JavaScript Date
 function excelSerialToDate(serial: number): Date {
@@ -78,28 +84,13 @@ function parseFlexibleDate(dateStr: unknown): Date | null {
   return null;
 }
 
-function startOfDay(date: Date): Date {
-  const normalized = new Date(date);
-  normalized.setHours(0, 0, 0, 0);
-  return normalized;
-}
-
-function isPastDate(date: Date): boolean {
-  return startOfDay(date).getTime() < startOfDay(new Date()).getTime();
-}
-
-function selectAwaitingPartsDueDate(inferredEta: unknown, partsDue: unknown): Date | null {
-  const inferredEtaDate = parseFlexibleDate(inferredEta);
-  if (inferredEtaDate && !isPastDate(inferredEtaDate)) {
-    return inferredEtaDate;
+function isWorkshopJobType(jobType: unknown): boolean {
+  if (!jobType) {
+    return false;
   }
 
-  const partsDueDate = parseFlexibleDate(partsDue);
-  if (partsDueDate && !isPastDate(partsDueDate)) {
-    return partsDueDate;
-  }
-
-  return null;
+  const normalized = String(jobType).trim().toLowerCase();
+  return workshopJobTypeMatchers.some((matcher) => normalized.includes(matcher));
 }
 
 // Extend session data type
@@ -113,16 +104,6 @@ declare module "express-session" {
       mustChangePassword?: boolean;
     };
     adminOtp?: {
-      email: string;
-      codeHash: string;
-      expiresAt: number;
-      attempts: number;
-      sentAt: number;
-      requestIp: string;
-      userAgent?: string;
-    };
-    customerOtp?: {
-      accountCode: string;
       email: string;
       codeHash: string;
       expiresAt: number;
@@ -196,9 +177,9 @@ function safeStringEqual(a: string, b: string): boolean {
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "otto@lvcuk.com").trim().toLowerCase();
 const ADMIN_OTP_TTL_MS = 10 * 60 * 1000;
 const ADMIN_OTP_MAX_ATTEMPTS = 5;
-const CUSTOMER_OTP_TTL_MS = 10 * 60 * 1000;
-const CUSTOMER_OTP_MAX_ATTEMPTS = 5;
-const OTP_EMAIL_SANDBOX_SETTING = "otp_email_sandbox_enabled";
+const OTP_EMAIL_SANDBOX_SETTING_KEY = "otp_email_sandbox_enabled";
+const WORKSHOP_EMAIL_DEMO_MODE_SETTING_KEY = "workshop_email_demo_mode_enabled";
+const WORKSHOP_EMAIL_DEMO_RECIPIENT_SETTING_KEY = "workshop_email_demo_recipient";
 
 function adminOtpLockoutKey(): string {
   return lockoutKey("admin", ADMIN_EMAIL);
@@ -208,26 +189,11 @@ function generateAdminOtp(): string {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
 
-function generateOtp(): string {
-  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
-}
-
 function hashAdminOtp(sessionId: string, code: string): string {
   return crypto
     .createHmac("sha256", process.env.SESSION_SECRET || "")
     .update(`${ADMIN_EMAIL}:${sessionId}:${code}`)
     .digest("hex");
-}
-
-function hashCustomerOtp(sessionId: string, accountCode: string, email: string, code: string): string {
-  return crypto
-    .createHmac("sha256", process.env.SESSION_SECRET || "")
-    .update(`${accountCode.toLowerCase()}:${email.toLowerCase()}:${sessionId}:${code}`)
-    .digest("hex");
-}
-
-async function isOtpEmailSandboxEnabled(): Promise<boolean> {
-  return (await storage.getSystemSetting(OTP_EMAIL_SANDBOX_SETTING)) === "true";
 }
 
 function isAdminIpAllowed(req: Request): boolean {
@@ -280,22 +246,51 @@ async function sendAdminOtpEmail(req: Request, code: string) {
   }
 }
 
-async function sendCustomerOtpEmail(to: string, accountName: string, code: string) {
+async function getBooleanSetting(key: string, defaultValue: boolean): Promise<boolean> {
+  const value = await storage.getSystemSetting(key);
+  if (value === null) {
+    return defaultValue;
+  }
+
+  return value === "true";
+}
+
+async function getWorkshopEmailSettings() {
+  const workshopEmailDemoModeEnabled = await getBooleanSetting(WORKSHOP_EMAIL_DEMO_MODE_SETTING_KEY, true);
+  const workshopEmailDemoRecipient = (await storage.getSystemSetting(WORKSHOP_EMAIL_DEMO_RECIPIENT_SETTING_KEY)) || ADMIN_EMAIL;
+
+  return {
+    workshopEmailDemoModeEnabled,
+    workshopEmailDemoRecipient,
+  };
+}
+
+async function sendWorkshopUpdateEmail(req: Request, input: {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM || process.env.EMAIL_FROM;
   if (!apiKey) {
-    throw new Error("RESEND_API_KEY must be set to send customer login codes");
+    throw new Error("RESEND_API_KEY must be set to send workshop updates");
   }
   if (!from) {
-    throw new Error("RESEND_FROM or EMAIL_FROM must be set to send customer login codes");
+    throw new Error("RESEND_FROM or EMAIL_FROM must be set to send workshop updates");
   }
 
-  const expiresInMinutes = Math.floor(CUSTOMER_OTP_TTL_MS / 60000);
-  const sandboxEnabled = await isOtpEmailSandboxEnabled();
-  const deliveryTo = sandboxEnabled ? ADMIN_EMAIL : to;
-  const subjectPrefix = sandboxEnabled ? "[REROUTED] " : "";
-  const rerouteText = sandboxEnabled ? `\n\nRerouted by admin setting. Intended recipient: ${to}.` : "";
-  const rerouteHtml = sandboxEnabled ? `<p><strong>Rerouted by admin setting.</strong><br />Intended recipient: ${to}</p>` : "";
+  const settings = await getWorkshopEmailSettings();
+  const recipient = settings.workshopEmailDemoModeEnabled ? settings.workshopEmailDemoRecipient : input.to;
+
+  const payload: Record<string, unknown> = {
+    from,
+    to: [recipient],
+    subject: settings.workshopEmailDemoModeEnabled ? `[DEMO] ${input.subject}` : input.subject,
+    text: input.text,
+    html: input.html,
+  };
+  if (process.env.RESEND_REPLY_TO) payload.reply_to = process.env.RESEND_REPLY_TO;
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -303,19 +298,44 @@ async function sendCustomerOtpEmail(to: string, accountName: string, code: strin
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      from,
-      to: [deliveryTo],
-      subject: `${subjectPrefix}LVC Portal login code`,
-      text: `Your LVC Portal login code for ${accountName} is ${code}. It expires in ${expiresInMinutes} minutes.${rerouteText}`,
-      html: `<p>Your LVC Portal login code for ${accountName} is:</p><p style="font-size:24px;letter-spacing:4px;font-weight:700;">${code}</p><p>It expires in ${expiresInMinutes} minutes.</p>${rerouteHtml}`,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(`Resend email delivery failed (${response.status})${body ? `: ${body.slice(0, 300)}` : ""}`);
   }
+
+  return {
+    recipient,
+    demoMode: settings.workshopEmailDemoModeEnabled,
+  };
+}
+
+function buildWorkshopUpdateMessage(input: {
+  laneLabel: string;
+  jobId: string;
+  siteName: string;
+  equipment?: string | null;
+  customMessage?: string | null;
+}) {
+  const subject = `Update on workshop job ${input.jobId}`;
+  const intro = `We wanted to let you know that your equipment has moved to: ${input.laneLabel}.`;
+  const equipmentLine = input.equipment ? `Equipment: ${input.equipment}` : null;
+  const locationLine = `Site: ${input.siteName}`;
+  const customMessage = input.customMessage?.trim() || null;
+  const lines = [
+    intro,
+    `Job reference: ${input.jobId}`,
+    locationLine,
+    equipmentLine,
+    customMessage,
+    "If you need anything further, please reply to this email or contact the LVC service team.",
+  ].filter(Boolean) as string[];
+
+  const text = lines.join("\n\n");
+  const html = lines.map((line) => `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`).join("");
+  return { subject, text, html };
 }
 
 function saveSession(req: Request): Promise<void> {
@@ -447,28 +467,6 @@ function computeUpcomingDate(
     return { date: new Date(job.visitDate), type: 'visit' };
   }
   
-  return null;
-}
-
-function computeCustomerDisplayStatus(
-  job: { status?: string | null },
-  override: { displayStatus?: string | null } | null | undefined,
-  upcoming: { date: Date; type: 'parts' | 'visit' } | null,
-): string | null {
-  const overriddenStatus = override?.displayStatus?.trim();
-  if (overriddenStatus) {
-    return overriddenStatus;
-  }
-
-  const status = job.status?.trim();
-  if (!status) {
-    return null;
-  }
-
-  if (status.toLowerCase().includes('awaiting parts') && !upcoming) {
-    return 'Overdue';
-  }
-
   return null;
 }
 
@@ -612,28 +610,18 @@ export async function registerRoutes(
     }
   });
 
-  const customerOtpRequestLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 5,
-    message: { message: "Too many code requests. Please try again in 15 minutes." },
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
-
-  // Customer login: email a one-time 6 digit code to the approved mailbox on the account.
-  app.post("/api/auth/customer/request-otp", customerOtpRequestLimiter, async (req, res) => {
+  // Customer login (with rate limiting + per-account lockout)
+  app.post("/api/auth/customer/login", loginRateLimiter, async (req, res) => {
     try {
-      const parsed = z.object({
-        accountCode: z.string().trim().min(1, "Account code is required").max(64, "Invalid account code"),
-        email: z.string().trim().email("Enter a valid email address").max(320, "Invalid email address"),
-      }).safeParse(req.body || {});
+      const { accountCode, password } = req.body || {};
 
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid login details" });
+      if (typeof accountCode !== "string" || typeof password !== "string" || !accountCode || !password) {
+        return res.status(400).json({ message: "Account code and password are required" });
       }
-
-      const normalizedAccountCode = parsed.data.accountCode;
-      const normalizedEmail = parsed.data.email.toLowerCase();
+      const normalizedAccountCode = accountCode.trim();
+      if (!normalizedAccountCode || normalizedAccountCode.length > 64 || password.length > 256) {
+        return res.status(400).json({ message: "Invalid credentials" });
+      }
 
       const key = lockoutKey("customer", normalizedAccountCode);
       const lockedFor = isLockedOut(key);
@@ -642,112 +630,33 @@ export async function registerRoutes(
       }
 
       const account = await storage.getCustomerAccountByCode(normalizedAccountCode);
-      if (!account || !account.email || account.email.trim().toLowerCase() !== normalizedEmail) {
+      // Always run bcrypt to keep timing roughly constant whether or not the account exists.
+      const dummyHash = "$2a$10$CwTycUXWue0Thq9StjUM0uJ8.OE8xvRgHJ3kQ8h2k5OKqQF7j2/X.";
+      const valid = await bcrypt.compare(password, account?.passwordHash || dummyHash);
+      if (!account || !valid) {
         recordFailure(key);
-        await audit(req, "customer.otp.request_denied", { actorType: "customer", actorId: normalizedAccountCode });
-        return res.status(401).json({ message: "Account code and email do not match" });
-      }
-
-      const code = generateOtp();
-      req.session.customerOtp = {
-        accountCode: account.accountCode,
-        email: normalizedEmail,
-        codeHash: hashCustomerOtp(req.sessionID, account.accountCode, normalizedEmail, code),
-        expiresAt: Date.now() + CUSTOMER_OTP_TTL_MS,
-        attempts: 0,
-        sentAt: Date.now(),
-        requestIp: clientIp(req),
-        userAgent: (req.headers["user-agent"] as string | undefined) || undefined,
-      };
-
-      try {
-        await sendCustomerOtpEmail(normalizedEmail, account.accountName, code);
-      } catch (error) {
-        delete req.session.customerOtp;
-        console.error("Customer OTP email error:", error);
-        return res.status(500).json({ message: "Customer login email is not configured" });
-      }
-
-      await audit(req, "customer.otp.requested", { actorType: "customer", actorId: account.accountCode });
-      res.json({ message: "Code sent", email: normalizedEmail, expiresInSeconds: CUSTOMER_OTP_TTL_MS / 1000 });
-    } catch (error) {
-      console.error("Customer OTP request error:", error);
-      res.status(500).json({ message: "Internal server error" });
-    }
-  });
-
-  app.post("/api/auth/customer/verify-otp", loginRateLimiter, async (req, res) => {
-    try {
-      const parsed = z.object({ code: z.string().regex(/^\d{6}$/, "Enter the 6 digit code") }).safeParse(req.body || {});
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid code" });
-      }
-
-      const challenge = req.session.customerOtp;
-      if (!challenge) {
-        return res.status(400).json({ message: "Request a new login code" });
-      }
-
-      const key = lockoutKey("customer", challenge.accountCode);
-      const lockedFor = isLockedOut(key);
-      if (lockedFor > 0) {
-        return res.status(429).json({ message: `Account temporarily locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
-      }
-
-      if (challenge.expiresAt <= Date.now()) {
-        delete req.session.customerOtp;
-        return res.status(401).json({ message: "Login code expired" });
-      }
-
-      if (challenge.attempts >= CUSTOMER_OTP_MAX_ATTEMPTS) {
-        delete req.session.customerOtp;
-        recordFailure(key);
-        await audit(req, "customer.otp.too_many_attempts", { actorType: "customer", actorId: challenge.accountCode });
-        return res.status(429).json({ message: "Too many incorrect codes. Request a new login code." });
-      }
-
-      const expectedHash = hashCustomerOtp(req.sessionID, challenge.accountCode, challenge.email, parsed.data.code);
-      if (!safeStringEqual(expectedHash, challenge.codeHash)) {
-        req.session.customerOtp = { ...challenge, attempts: challenge.attempts + 1 };
-        recordFailure(key);
-        await audit(req, "customer.otp.failure", { actorType: "customer", actorId: challenge.accountCode });
-        return res.status(401).json({ message: "Invalid login code" });
-      }
-
-      const account = await storage.getCustomerAccountByCode(challenge.accountCode);
-      if (!account || !account.email || account.email.trim().toLowerCase() !== challenge.email) {
-        delete req.session.customerOtp;
-        return res.status(401).json({ message: "Request a new login code" });
+        await audit(req, "login.failure", { actorType: "customer", actorId: normalizedAccountCode });
+        return res.status(401).json({ message: "Invalid credentials" });
       }
 
       clearFailures(key);
-      await regenerateSession(req);
       req.session.user = {
         type: "customer",
-        email: account.email,
         accountCode: account.accountCode,
         accountName: account.accountName,
-        mustChangePassword: false,
+        mustChangePassword: !!account.mustChangePassword,
       };
       await storage.updateCustomerLastLogin(account.accountCode);
-      if (account.mustChangePassword) {
-        await storage.setMustChangePassword(account.accountCode, false);
-      }
       await audit(req, "login.success", { actorType: "customer", actorId: account.accountCode });
-      await saveSession(req);
 
       res.json({
         user: req.session.user,
-        mustChangePassword: false,
+        mustChangePassword: !!account.mustChangePassword,
       });
     } catch (error) {
-      console.error("Customer OTP verify error:", error);
+      console.error("Login error:", error);
       res.status(500).json({ message: "Internal server error" });
     }
-  });
-
-  app.post("/api/auth/customer/login", (_req, res) => {
-    res.status(410).json({ message: "Customer password login is disabled. Use email code sign in." });
   });
 
   const adminOtpRequestLimiter = rateLimit({
@@ -988,7 +897,7 @@ export async function registerRoutes(
         const upcoming = computeUpcomingDate(job, override);
         return {
           ...job,
-          displayStatus: computeCustomerDisplayStatus(job, override, upcoming),
+          displayStatus: override?.displayStatus || null,
           adminNotes: override?.adminNotes || null,
           upcomingDate: upcoming?.date || null,
           upcomingDateType: upcoming?.type || null,
@@ -1025,7 +934,7 @@ export async function registerRoutes(
       res.json({ 
         job: {
           ...job,
-          displayStatus: computeCustomerDisplayStatus(job, override, upcoming),
+          displayStatus: override?.displayStatus || null,
           adminNotes: override?.adminNotes || null,
           upcomingDate: upcoming?.date || null,
           upcomingDateType: upcoming?.type || null,
@@ -1180,8 +1089,7 @@ export async function registerRoutes(
       // Build CSV data
       const csvData = result.jobs.map(job => {
         const override = overrideMap.get(job.jobId);
-        const upcoming = computeUpcomingDate(job, override);
-        const displayStatus = computeCustomerDisplayStatus(job, override, upcoming) || job.status;
+        const displayStatus = override?.displayStatus || job.status;
         return {
           "Job ID": job.jobId,
           "Site Name": job.siteName,
@@ -1310,12 +1218,12 @@ export async function registerRoutes(
         }
 
         const override = overrideMap.get(job.jobId);
-        const upcoming = computeUpcomingDate(job, override);
-        const displayStatus = computeCustomerDisplayStatus(job, override, upcoming) || job.status || 'Unknown';
+        const displayStatus = override?.displayStatus || job.status || 'Unknown';
         const adminNotes = override?.adminNotes || '';
-
+        
         // Compute ETA using same logic as main jobs list
         let etaInfo = '';
+        const upcoming = computeUpcomingDate(job, override);
         
         if (upcoming) {
           const isAwaitingParts = displayStatus.toLowerCase().includes('awaiting parts');
@@ -1475,45 +1383,6 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/settings/communications", requireAuth("admin"), async (_req, res) => {
-    try {
-      res.json({
-        otpEmailSandboxEnabled: await isOtpEmailSandboxEnabled(),
-        otpEmailSandboxRecipient: ADMIN_EMAIL,
-      });
-    } catch (error) {
-      console.error("Communication settings fetch error:", error);
-      res.status(500).json({ message: "Internal server error" });
-    }
-  });
-
-  app.patch("/api/admin/settings/communications", requireAuth("admin"), async (req, res) => {
-    try {
-      const parsed = z.object({
-        otpEmailSandboxEnabled: z.boolean(),
-      }).safeParse(req.body || {});
-
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid communication settings" });
-      }
-
-      await storage.setSystemSetting(OTP_EMAIL_SANDBOX_SETTING, String(parsed.data.otpEmailSandboxEnabled));
-      await audit(req, "admin.settings.communications_update", {
-        targetType: "system_setting",
-        targetId: OTP_EMAIL_SANDBOX_SETTING,
-        payload: { otpEmailSandboxEnabled: parsed.data.otpEmailSandboxEnabled },
-      });
-
-      res.json({
-        otpEmailSandboxEnabled: parsed.data.otpEmailSandboxEnabled,
-        otpEmailSandboxRecipient: ADMIN_EMAIL,
-      });
-    } catch (error) {
-      console.error("Communication settings update error:", error);
-      res.status(500).json({ message: "Internal server error" });
-    }
-  });
-
   // Admin Accounts
   app.get("/api/admin/accounts", requireAuth("admin"), async (req, res) => {
     try {
@@ -1527,16 +1396,16 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/admin/accounts/:accountCode/email", requireAuth("admin"), async (req, res) => {
+  app.patch("/api/admin/accounts/:accountCode/password", requireAuth("admin"), async (req, res) => {
     try {
       const accountCode = req.params.accountCode.trim();
-      const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : null;
+      const { password } = req.body || {};
 
-      if (email === null) {
-        return res.status(400).json({ message: "Email is required" });
+      if (typeof password !== "string" || password.length < 12 || password.length > 256) {
+        return res.status(400).json({ message: "Password must be 12-256 characters" });
       }
-      if (email && !z.string().email().safeParse(email).success) {
-        return res.status(400).json({ message: "Enter a valid email address" });
+      if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+        return res.status(400).json({ message: "Password must contain upper, lower, and number" });
       }
 
       const account = await storage.getCustomerAccountByCode(accountCode);
@@ -1544,17 +1413,17 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Customer account not found" });
       }
 
-      const savedEmail = email || null;
-      await storage.updateCustomerAccountEmail(account.accountCode, savedEmail);
-      await audit(req, "admin.account.email_update", {
+      const passwordHash = await bcrypt.hash(password, 12);
+      await storage.updateCustomerAccountPassword(account.accountCode, passwordHash);
+      await storage.setMustChangePassword(account.accountCode, true);
+      await audit(req, "admin.account.password_reset", {
         targetType: "customer_account",
         targetId: account.accountCode,
-        payload: { emailSet: !!savedEmail },
       });
 
-      res.json({ message: "Email updated", accountCode: account.accountCode, email: savedEmail });
+      res.json({ message: "Password updated", accountCode: account.accountCode, mustChangePassword: true });
     } catch (error) {
-      console.error("Account email update error:", error);
+      console.error("Password reset error:", error);
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -1624,7 +1493,7 @@ export async function registerRoutes(
         return {
           ...job,
           override: override || null,
-          displayStatus: computeCustomerDisplayStatus(job, override, upcoming),
+          displayStatus: override?.displayStatus || null,
           adminNotes: override?.adminNotes || null,
           upcomingDate: upcoming?.date || null,
           upcomingDateType: upcoming?.type || null,
@@ -1715,6 +1584,160 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/workshop-board", requireAuth("admin"), async (req, res) => {
+    try {
+      const board = await storage.getWorkshopBoard();
+      res.json(board);
+    } catch (error) {
+      console.error("Workshop board fetch error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/admin/workshop/settings", requireAuth("admin"), async (_req, res) => {
+    try {
+      res.json(await getWorkshopEmailSettings());
+    } catch (error) {
+      console.error("Workshop settings fetch error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/admin/workshop/settings", requireAuth("admin"), async (req, res) => {
+    try {
+      const { workshopEmailDemoModeEnabled } = req.body as { workshopEmailDemoModeEnabled?: unknown };
+
+      if (typeof workshopEmailDemoModeEnabled !== "boolean") {
+        return res.status(400).json({ message: "workshopEmailDemoModeEnabled must be a boolean" });
+      }
+
+      await storage.setSystemSetting(WORKSHOP_EMAIL_DEMO_MODE_SETTING_KEY, String(workshopEmailDemoModeEnabled));
+      await storage.setSystemSetting(WORKSHOP_EMAIL_DEMO_RECIPIENT_SETTING_KEY, ADMIN_EMAIL);
+
+      res.json(await getWorkshopEmailSettings());
+    } catch (error) {
+      console.error("Workshop settings update error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/admin/workshop-board/:jobId/events", requireAuth("admin"), async (req, res) => {
+    try {
+      const events = await storage.getWorkshopBoardEvents(req.params.jobId);
+      res.json(events);
+    } catch (error) {
+      console.error("Workshop board events fetch error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/admin/workshop-board/:jobId/move", requireAuth("admin"), async (req, res) => {
+    try {
+      const { lane, laneOrder, note, sendClientUpdate } = req.body;
+
+      if (typeof lane !== "string" || !isWorkshopLane(lane)) {
+        return res.status(400).json({ message: "Valid workshop lane is required" });
+      }
+
+      const board = await storage.getWorkshopBoard();
+      const boardItem = board.find((item) => item.card.jobId === req.params.jobId);
+      if (!boardItem?.job) {
+        return res.status(404).json({ message: "Workshop job not found" });
+      }
+
+      const account = sendClientUpdate
+        ? await storage.getCustomerAccountByCode(boardItem.job.accountCode)
+        : null;
+
+      if (sendClientUpdate && !account?.email) {
+        return res.status(400).json({ message: "This account does not have a customer email address configured" });
+      }
+
+      const customerEmail = account?.email ?? null;
+
+      const card = await storage.moveWorkshopBoardCard({
+        jobId: req.params.jobId,
+        toLane: lane,
+        laneOrder: Number.isFinite(Number(laneOrder)) ? Number(laneOrder) : 0,
+        actor: req.session.user?.type === "admin" ? (req.session.user.email || "admin") : "admin",
+        payload: JSON.stringify({ note: note || null, sendClientUpdate: !!sendClientUpdate }),
+      });
+
+      let emailResult: { recipient: string; demoMode: boolean } | null = null;
+      let emailError: string | null = null;
+      if (sendClientUpdate) {
+        const laneLabelMap: Record<string, string> = {
+          entry: "Entry",
+          booked_in: "Booked In",
+          on_the_bench: "On The Bench",
+          quoted: "Quoted",
+          awaiting_parts: "Awaiting Parts",
+          repair_completed: "Repair Completed",
+        };
+
+        const message = buildWorkshopUpdateMessage({
+          laneLabel: laneLabelMap[lane] || lane,
+          jobId: boardItem.job.jobId,
+          siteName: boardItem.job.siteName,
+          equipment: boardItem.job.equipment,
+          customMessage: typeof note === "string" ? note : null,
+        });
+
+        try {
+          emailResult = await sendWorkshopUpdateEmail(req, {
+            to: customerEmail as string,
+            subject: message.subject,
+            text: message.text,
+            html: message.html,
+          });
+
+          await storage.updateWorkshopBoardCard({
+            ...card,
+            lastEmailSentAt: new Date(),
+            lastEmailOutcome: emailResult.demoMode ? `demo:${emailResult.recipient}` : `sent:${emailResult.recipient}`,
+          });
+
+          await storage.createWorkshopBoardEvent({
+            jobId: req.params.jobId,
+            eventType: emailResult.demoMode ? "email_sent_demo" : "email_sent",
+            fromLane: null,
+            toLane: lane,
+            actor: req.session.user?.email || "admin",
+            payload: JSON.stringify({ recipient: emailResult.recipient, note: typeof note === "string" ? note : null }),
+          });
+        } catch (error) {
+          emailError = error instanceof Error ? error.message : "Failed to send workshop update";
+
+          await storage.updateWorkshopBoardCard({
+            ...card,
+            lastEmailSentAt: new Date(),
+            lastEmailOutcome: `failed:${emailError}`,
+          });
+
+          await storage.createWorkshopBoardEvent({
+            jobId: req.params.jobId,
+            eventType: "email_failed",
+            fromLane: null,
+            toLane: lane,
+            actor: req.session.user?.email || "admin",
+            payload: JSON.stringify({ error: emailError, note: typeof note === "string" ? note : null }),
+          });
+        }
+      }
+
+      await audit(req, "admin.workshop.move", {
+        targetType: "workshop_board_card",
+        targetId: req.params.jobId,
+        payload: { lane, laneOrder: card.laneOrder, note: note || null, sendClientUpdate: !!sendClientUpdate, emailResult, emailError },
+      });
+
+      res.json({ card, emailResult, emailError });
+    } catch (error) {
+      console.error("Workshop board move error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // Admin Imports
   app.get("/api/admin/imports", requireAuth("admin"), async (req, res) => {
     try {
@@ -1755,6 +1778,7 @@ export async function registerRoutes(
 
       const errors: { row: number; message: string }[] = [];
       let successCount = 0;
+      const importedWorkshopJobs: Array<{ jobId: string; status: string; jobType: string | null }> = [];
 
       // Create import batch first
       const batch = await storage.createImportBatch({
@@ -1794,8 +1818,10 @@ export async function registerRoutes(
             const displayStatus = portalStatus || internalStatus;
             const jobType = getCol(row, 'Job Type', 'job_type', 'JobType');
             const equipment = getCol(row, 'Equipment', 'equipment');
+            const jobTypeStr = jobType ? String(jobType).trim() : null;
+            const displayStatusStr = displayStatus ? String(displayStatus).trim() : "Unknown";
             // Build description from Job Type and Equipment
-            let shortDescription = jobType ? String(jobType) : "No description";
+            let shortDescription = jobTypeStr || "No description";
             if (equipment) {
               shortDescription += ` - ${String(equipment)}`;
             }
@@ -1818,7 +1844,10 @@ export async function registerRoutes(
               jobId: String(jobId),
               accountCode: String(accountCode),
               siteName: fullSiteName,
-              status: displayStatus ? String(displayStatus) : "Unknown",
+              status: displayStatusStr,
+              sourcePortalStatus: portalStatus ? String(portalStatus).trim() : null,
+              jobType: jobTypeStr,
+              isWorkshop: isWorkshopJobType(jobTypeStr),
               createdDate: new Date(),
               lastUpdatedDate: new Date(),
               shortDescription,
@@ -1832,6 +1861,13 @@ export async function registerRoutes(
               equipment: equipment ? String(equipment).trim() : null,
               importBatchId: batch.id,
             });
+            if (isWorkshopJobType(jobTypeStr)) {
+              importedWorkshopJobs.push({
+                jobId: String(jobId).trim(),
+                status: displayStatusStr,
+                jobType: jobTypeStr,
+              });
+            }
             successCount++;
           } else if (type === "quotes") {
             const requiredFields = ["quote_id", "account_code", "quote_status", "net_total", "vat_total", "gross_total", "quote_date"];
@@ -1887,6 +1923,24 @@ export async function registerRoutes(
 
       // Update last import timestamp
       await storage.setSystemSetting("last_import", new Date().toISOString());
+
+      for (const job of importedWorkshopJobs) {
+        await storage.updateWorkshopBoardCard({
+          jobId: job.jobId,
+          boardLane: getDefaultWorkshopLane(job.status),
+          laneOrder: 0,
+          sourceStatusAtLastSync: job.status,
+          sourceJobType: job.jobType,
+          lastSeenInImportAt: new Date(),
+          archivedAt: null,
+          movedBy: null,
+          movedAt: null,
+          lastEmailSentAt: null,
+          lastEmailOutcome: null,
+          partsEtaOverride: null,
+          internalNotes: null,
+        });
+      }
 
       res.json({
         batchId: batch.id,
@@ -1972,6 +2026,9 @@ export async function registerRoutes(
         accountCode: string;
         siteName: string;
         status: string;
+        sourcePortalStatus: string | null;
+        jobType: string | null;
+        isWorkshop: boolean;
         createdDate: Date;
         lastUpdatedDate: Date;
         shortDescription: string;
@@ -2007,14 +2064,13 @@ export async function registerRoutes(
           const displayStatus = portalStatus || internalStatus;
           const jobType = getCol(row, 'Job Type', 'job_type', 'JobType', 'dbo_tblJobType_Name');
           const equipment = getCol(row, 'Equipment', 'equipment');
+          const jobTypeStr = jobType ? String(jobType).trim() : null;
+          const displayStatusStr = displayStatus ? String(displayStatus).trim() : "Unknown";
           const engineerName = getCol(row, 'Allocated Engineer', 'engineer_name', 'Employee', 'Engineer');
-           const inferredEta = getCol(row, 'Inferred ETA', 'inferred_eta', 'ETA', 'Eta', 'ETA Date', 'eta_date');
-          const statusText = displayStatus ? String(displayStatus).toLowerCase() : '';
-          const visitDate = parseFlexibleDate(getCol(row, 'Visit Date', 'visit_date', 'VisitDate', 'Scheduled Date', 'Engineer Visit Date'));
-          const partsDue = getCol(row, 'Parts Due', 'parts_due', 'due_date', 'Due', 'DueDate', 'Parts ETA', 'Parts ETA Date');
-          const dueDate = statusText.includes('awaiting parts')
-            ? selectAwaitingPartsDueDate(inferredEta, partsDue)
-            : parseFlexibleDate(partsDue ? String(partsDue) : null);
+          const etaDate = getCol(row, 'ETA', 'Eta', 'ETA Date', 'eta_date');
+          const statusText = displayStatusStr.toLowerCase();
+          const visitDate = getCol(row, 'Visit Date', 'visit_date', 'VisitDate', 'Scheduled Date', 'Engineer Visit Date') || (statusText.includes('pending engineer') ? etaDate : null);
+          const partsDue = getCol(row, 'Parts Due', 'parts_due', 'due_date', 'Due', 'DueDate', 'Parts ETA', 'Parts ETA Date') || (statusText.includes('awaiting parts') ? etaDate : null);
           const jobValue = getCol(row, 'Total Job Value', 'job_value_estimate', 'JobValue', 'Job Value');
           const postCode = getCol(row, 'PostCode', 'postcode', 'post_code');
 
@@ -2037,7 +2093,7 @@ export async function registerRoutes(
             accountsToCreate.set(accountCodeStr, { code: accountCodeStr, name: accountNameStr });
           }
 
-          let shortDescription = jobType ? String(jobType).trim() : "No description";
+          let shortDescription = jobTypeStr || "No description";
           if (equipment) {
             shortDescription += ` - ${String(equipment).trim()}`;
           }
@@ -2048,7 +2104,10 @@ export async function registerRoutes(
             jobId: jobIdStr,
             accountCode: accountCodeStr,
             siteName: fullSiteName,
-            status: displayStatus ? String(displayStatus).trim() : "Unknown",
+            status: displayStatusStr,
+            sourcePortalStatus: portalStatus ? String(portalStatus).trim() : null,
+            jobType: jobTypeStr,
+            isWorkshop: isWorkshopJobType(jobTypeStr),
             createdDate: new Date(),
             lastUpdatedDate: new Date(),
             shortDescription,
@@ -2057,8 +2116,8 @@ export async function registerRoutes(
             nextActionDueDate: null,
             priority: null,
             jobValueEstimate: jobValue ? String(jobValue).replace(/[^0-9.-]/g, '') : null,
-            dueDate,
-            visitDate,
+            dueDate: parseFlexibleDate(partsDue ? String(partsDue) : null),
+            visitDate: parseFlexibleDate(visitDate ? String(visitDate) : null),
             equipment: equipment ? String(equipment).trim() : null,
             importBatchId: null,
           });
@@ -2099,6 +2158,15 @@ export async function registerRoutes(
       for (const job of jobsToInsert) {
         await storage.createJob(job);
       }
+
+      await storage.syncWorkshopBoard(
+        jobsToInsert.map((job) => ({
+          jobId: job.jobId,
+          status: job.status,
+          jobType: job.jobType ?? null,
+          isWorkshop: job.isWorkshop ?? false,
+        })),
+      );
 
       // Update last import timestamp
       await storage.setSystemSetting("last_import", new Date().toISOString());

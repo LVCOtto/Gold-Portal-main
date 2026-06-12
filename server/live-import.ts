@@ -20,6 +20,10 @@ const r2Key = process.env.AUTO_IMPORT_R2_KEY;
 const r2AccessKeyId = process.env.AUTO_IMPORT_R2_ACCESS_KEY_ID;
 const r2SecretAccessKey = process.env.AUTO_IMPORT_R2_SECRET_ACCESS_KEY;
 const r2Region = process.env.AUTO_IMPORT_R2_REGION || "auto";
+const workshopJobTypeMatchers = (process.env.WORKSHOP_JOB_TYPE_MATCHES || "workshop")
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
 
 let lastSeenSignature: string | null = null;
 let isImportRunning = false;
@@ -160,6 +164,15 @@ function getCol(row: Record<string, unknown>, ...names: string[]): unknown {
     }
   }
   return null;
+}
+
+function isWorkshopJobType(jobType: unknown): boolean {
+  if (!jobType) {
+    return false;
+  }
+
+  const normalized = String(jobType).trim().toLowerCase();
+  return workshopJobTypeMatchers.some((matcher) => normalized.includes(matcher));
 }
 
 async function responseBodyToBuffer(body: GetObjectCommandOutput["Body"]): Promise<Buffer> {
@@ -309,12 +322,14 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
 
       const accountCodeStr = String(accountCode).trim();
       const accountNameStr = accountName ? String(accountName).trim() : accountCodeStr;
+      const jobTypeStr = jobType ? String(jobType).trim() : null;
+      const displayStatusStr = displayStatus ? String(displayStatus).trim() : "Unknown";
 
       if (!existingAccountCodes.has(accountCodeStr) && !accountsToCreate.has(accountCodeStr)) {
         accountsToCreate.set(accountCodeStr, { code: accountCodeStr, name: accountNameStr });
       }
 
-      let shortDescription = jobType ? String(jobType).trim() : "No description";
+      let shortDescription = jobTypeStr || "No description";
       if (equipment) {
         shortDescription += ` - ${String(equipment).trim()}`;
       }
@@ -325,7 +340,10 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
         jobId: jobIdStr,
         accountCode: accountCodeStr,
         siteName: fullSiteName,
-        status: displayStatus ? String(displayStatus).trim() : "Unknown",
+        status: displayStatusStr,
+        sourcePortalStatus: portalStatus ? String(portalStatus).trim() : null,
+        jobType: jobTypeStr,
+        isWorkshop: isWorkshopJobType(jobTypeStr),
         createdDate: new Date(),
         lastUpdatedDate: new Date(),
         shortDescription,
@@ -379,6 +397,15 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
   for (const job of jobsToInsert) {
     await storage.createJob(job);
   }
+
+  await storage.syncWorkshopBoard(
+    jobsToInsert.map((job) => ({
+      jobId: job.jobId,
+      status: job.status,
+      jobType: job.jobType ?? null,
+      isWorkshop: job.isWorkshop ?? false,
+    })),
+  );
 
   await storage.setSystemSetting("last_import", new Date().toISOString());
   await storage.setSystemSetting("last_import_source", sourceName);

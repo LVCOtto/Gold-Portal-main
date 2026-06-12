@@ -1,5 +1,5 @@
 import { 
-  customerAccounts, jobs, quotes, purchaseOrders, importBatches, approvalEvents, systemSettings, jobOverrides, auditEvents,
+  customerAccounts, jobs, quotes, purchaseOrders, importBatches, approvalEvents, systemSettings, jobOverrides, auditEvents, workshopBoardCards, workshopBoardEvents,
   type CustomerAccount, type InsertCustomerAccount,
   type Job, type InsertJob,
   type Quote, type InsertQuote,
@@ -7,11 +7,15 @@ import {
   type ImportBatch, type InsertImportBatch,
   type ApprovalEvent, type InsertApprovalEvent,
   type JobOverride, type InsertJobOverride,
+  type WorkshopBoardCard, type InsertWorkshopBoardCard,
+  type WorkshopBoardEvent, type InsertWorkshopBoardEvent,
   type AuditEvent, type InsertAuditEvent,
-  type SystemSetting
+  type SystemSetting,
+  type WorkshopLane,
+  getDefaultWorkshopLane,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, ilike, desc, asc, sql, gte } from "drizzle-orm";
+import { eq, and, or, ilike, desc, asc, sql, gte, isNull, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Customer Accounts
@@ -65,6 +69,14 @@ export interface IStorage {
   getJobOverrides(): Promise<JobOverride[]>;
   upsertJobOverride(override: InsertJobOverride): Promise<JobOverride>;
   deleteJobOverride(jobId: string): Promise<void>;
+
+  // Workshop board
+  getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null }>>;
+  getWorkshopBoardEvents(jobId: string): Promise<WorkshopBoardEvent[]>;
+  syncWorkshopBoard(jobSummaries: Array<{ jobId: string; status: string; jobType: string | null; isWorkshop: boolean }>): Promise<void>;
+  moveWorkshopBoardCard(input: { jobId: string; toLane: WorkshopLane; laneOrder?: number; actor: string; payload?: string | null }): Promise<WorkshopBoardCard>;
+  updateWorkshopBoardCard(card: InsertWorkshopBoardCard): Promise<WorkshopBoardCard>;
+  createWorkshopBoardEvent(event: InsertWorkshopBoardEvent): Promise<WorkshopBoardEvent>;
 
   // Dashboard Stats
   getDashboardStats(accountCode: string): Promise<{ openJobs: number; awaitingApproval: number; awaitingParts: number; recentlyClosed: number }>;
@@ -409,6 +421,163 @@ export class DatabaseStorage implements IStorage {
 
   async deleteJobOverride(jobId: string): Promise<void> {
     await db.delete(jobOverrides).where(eq(jobOverrides.jobId, jobId));
+  }
+
+  // Workshop board
+  async getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null }>> {
+    const result = await db
+      .select()
+      .from(workshopBoardCards)
+      .leftJoin(jobs, eq(workshopBoardCards.jobId, jobs.jobId))
+      .where(isNull(workshopBoardCards.archivedAt))
+      .orderBy(asc(workshopBoardCards.boardLane), asc(workshopBoardCards.laneOrder), asc(workshopBoardCards.updatedAt));
+
+    return result.map((row) => ({ card: row.workshop_board_cards, job: row.jobs ?? null }));
+  }
+
+  async getWorkshopBoardEvents(jobId: string): Promise<WorkshopBoardEvent[]> {
+    return db.select().from(workshopBoardEvents)
+      .where(eq(workshopBoardEvents.jobId, jobId))
+      .orderBy(desc(workshopBoardEvents.createdAt));
+  }
+
+  async syncWorkshopBoard(jobSummaries: Array<{ jobId: string; status: string; jobType: string | null; isWorkshop: boolean }>): Promise<void> {
+    const now = new Date();
+    const workshopJobs = jobSummaries.filter((job) => job.isWorkshop);
+    const workshopJobIds = workshopJobs.map((job) => job.jobId);
+
+    for (const job of workshopJobs) {
+      const existing = await db.select().from(workshopBoardCards).where(eq(workshopBoardCards.jobId, job.jobId)).limit(1);
+      const existingCard = existing[0];
+
+      if (!existingCard) {
+        await db.insert(workshopBoardCards).values({
+          jobId: job.jobId,
+          boardLane: getDefaultWorkshopLane(job.status),
+          laneOrder: 0,
+          sourceStatusAtLastSync: job.status,
+          sourceJobType: job.jobType,
+          lastSeenInImportAt: now,
+          archivedAt: null,
+          updatedAt: now,
+        });
+
+        await db.insert(workshopBoardEvents).values({
+          jobId: job.jobId,
+          eventType: "created_from_import",
+          fromLane: null,
+          toLane: getDefaultWorkshopLane(job.status),
+          actor: "system",
+          payload: JSON.stringify({ status: job.status, jobType: job.jobType }),
+        });
+        continue;
+      }
+
+      await db.update(workshopBoardCards)
+        .set({
+          sourceStatusAtLastSync: job.status,
+          sourceJobType: job.jobType,
+          lastSeenInImportAt: now,
+          archivedAt: null,
+          updatedAt: now,
+        })
+        .where(eq(workshopBoardCards.jobId, job.jobId));
+    }
+
+    if (workshopJobIds.length > 0) {
+      const activeCards = await db.select().from(workshopBoardCards).where(isNull(workshopBoardCards.archivedAt));
+      for (const card of activeCards) {
+        if (!workshopJobIds.includes(card.jobId)) {
+          await db.update(workshopBoardCards)
+            .set({ archivedAt: now, updatedAt: now })
+            .where(eq(workshopBoardCards.jobId, card.jobId));
+
+          await db.insert(workshopBoardEvents).values({
+            jobId: card.jobId,
+            eventType: "archived_missing_from_import",
+            fromLane: card.boardLane,
+            toLane: null,
+            actor: "system",
+            payload: null,
+          });
+        }
+      }
+      return;
+    }
+
+    await db.update(workshopBoardCards)
+      .set({ archivedAt: now, updatedAt: now })
+      .where(isNull(workshopBoardCards.archivedAt));
+  }
+
+  async moveWorkshopBoardCard(input: { jobId: string; toLane: WorkshopLane; laneOrder?: number; actor: string; payload?: string | null }): Promise<WorkshopBoardCard> {
+    const now = new Date();
+    const [existing] = await db.select().from(workshopBoardCards).where(eq(workshopBoardCards.jobId, input.jobId)).limit(1);
+
+    const [updated] = await db.insert(workshopBoardCards)
+      .values({
+        jobId: input.jobId,
+        boardLane: input.toLane,
+        laneOrder: input.laneOrder ?? 0,
+        movedBy: input.actor,
+        movedAt: now,
+        archivedAt: null,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: workshopBoardCards.jobId,
+        set: {
+          boardLane: input.toLane,
+          laneOrder: input.laneOrder ?? 0,
+          movedBy: input.actor,
+          movedAt: now,
+          archivedAt: null,
+          updatedAt: now,
+        },
+      })
+      .returning();
+
+    await db.insert(workshopBoardEvents).values({
+      jobId: input.jobId,
+      eventType: "moved",
+      fromLane: existing?.boardLane ?? null,
+      toLane: input.toLane,
+      actor: input.actor,
+      payload: input.payload ?? null,
+    });
+
+    return updated;
+  }
+
+  async updateWorkshopBoardCard(card: InsertWorkshopBoardCard): Promise<WorkshopBoardCard> {
+    const now = new Date();
+    const [updated] = await db.insert(workshopBoardCards)
+      .values({ ...card, updatedAt: now })
+      .onConflictDoUpdate({
+        target: workshopBoardCards.jobId,
+        set: {
+          boardLane: card.boardLane,
+          laneOrder: card.laneOrder,
+          sourceStatusAtLastSync: card.sourceStatusAtLastSync,
+          sourceJobType: card.sourceJobType,
+          lastSeenInImportAt: card.lastSeenInImportAt,
+          archivedAt: card.archivedAt,
+          movedBy: card.movedBy,
+          movedAt: card.movedAt,
+          lastEmailSentAt: card.lastEmailSentAt,
+          lastEmailOutcome: card.lastEmailOutcome,
+          partsEtaOverride: card.partsEtaOverride,
+          internalNotes: card.internalNotes,
+          updatedAt: now,
+        },
+      })
+      .returning();
+    return updated;
+  }
+
+  async createWorkshopBoardEvent(event: InsertWorkshopBoardEvent): Promise<WorkshopBoardEvent> {
+    const [created] = await db.insert(workshopBoardEvents).values(event).returning();
+    return created;
   }
 
   // Dashboard Stats
