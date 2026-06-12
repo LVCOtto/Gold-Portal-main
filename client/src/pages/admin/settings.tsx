@@ -1,15 +1,19 @@
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminLayout } from "@/components/admin-layout";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 type CommunicationSettings = {
   otpEmailSandboxEnabled: boolean;
   otpEmailSandboxRecipient: string;
+  workshopTeamEmail: string;
 };
 
 export default function AdminSettingsPage() {
@@ -17,15 +21,25 @@ export default function AdminSettingsPage() {
   const { data: communicationSettings, isLoading } = useQuery<CommunicationSettings>({
     queryKey: ["/api/admin/settings/communications"],
   });
+  const [otpEmailSandboxEnabled, setOtpEmailSandboxEnabled] = useState(false);
+  const [workshopTeamEmail, setWorkshopTeamEmail] = useState("");
+
+  useEffect(() => {
+    if (!communicationSettings) {
+      return;
+    }
+    setOtpEmailSandboxEnabled(!!communicationSettings.otpEmailSandboxEnabled);
+    setWorkshopTeamEmail(communicationSettings.workshopTeamEmail || "");
+  }, [communicationSettings]);
 
   const mutation = useMutation({
-    mutationFn: async (otpEmailSandboxEnabled: boolean) => {
-      const response = await apiRequest("PATCH", "/api/admin/settings/communications", { otpEmailSandboxEnabled });
+    mutationFn: async (settings: { otpEmailSandboxEnabled: boolean; workshopTeamEmail: string }) => {
+      const response = await apiRequest("PATCH", "/api/admin/settings/communications", settings);
       return response.json() as Promise<CommunicationSettings>;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/communications"] });
-      toast({ title: "Settings saved", description: "OTP email routing has been updated." });
+      toast({ title: "Settings saved", description: "Communication settings have been updated." });
     },
     onError: (error) => {
       toast({
@@ -36,7 +50,6 @@ export default function AdminSettingsPage() {
     },
   });
 
-  const sandboxEnabled = !!communicationSettings?.otpEmailSandboxEnabled;
   const sandboxRecipient = communicationSettings?.otpEmailSandboxRecipient || "otto@lvcuk.com";
 
   return (
@@ -87,12 +100,26 @@ export default function AdminSettingsPage() {
               ) : (
                 <Switch
                   id="otp-email-sandbox"
-                  checked={sandboxEnabled}
+                  checked={otpEmailSandboxEnabled}
                   disabled={mutation.isPending}
-                  onCheckedChange={(checked) => mutation.mutate(checked)}
+                  onCheckedChange={setOtpEmailSandboxEnabled}
                   data-testid="switch-otp-email-sandbox"
                 />
               )}
+            </div>
+            <div className="space-y-2 rounded-md border p-4">
+              <Label htmlFor="workshop-team-email" className="font-medium">Workshop login email</Label>
+              <p className="text-xs text-muted-foreground">
+                The workshop team will receive their one-time login codes at this address and only be able to access the workshop T-card system.
+              </p>
+              <Input
+                id="workshop-team-email"
+                type="email"
+                value={workshopTeamEmail}
+                onChange={(event) => setWorkshopTeamEmail(event.target.value)}
+                placeholder="workshop@lvcuk.com"
+                data-testid="input-workshop-team-email"
+              />
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Customer Enquiries</span>
@@ -101,6 +128,15 @@ export default function AdminSettingsPage() {
             <p className="text-muted-foreground text-xs mt-2">
               Customer actions (approve quotes, chase jobs, queries) will send emails to this address.
             </p>
+            <Button
+              type="button"
+              disabled={isLoading || mutation.isPending}
+              onClick={() => mutation.mutate({ otpEmailSandboxEnabled, workshopTeamEmail: workshopTeamEmail.trim() })}
+              data-testid="button-save-communication-settings"
+            >
+              {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save Communication Settings
+            </Button>
           </CardContent>
         </Card>
       </div>

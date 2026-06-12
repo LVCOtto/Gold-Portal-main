@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import AdminLoginPage from "@/pages/admin-login";
+import WorkshopLoginPage from "@/pages/workshop-login";
 import DashboardPage from "@/pages/dashboard";
 import JobsPage from "@/pages/jobs";
 import JobDetailPage from "@/pages/job-detail";
@@ -31,10 +32,10 @@ function LoadingScreen() {
 
 function ProtectedRoute({ 
   children, 
-  requiredType 
+  requiredTypes 
 }: { 
   children: React.ReactNode; 
-  requiredType: "customer" | "admin";
+  requiredTypes: Array<"customer" | "admin" | "workshop">;
 }) {
   const { user, isLoading, mustChangePassword } = useAuth();
 
@@ -43,15 +44,21 @@ function ProtectedRoute({
   }
 
   if (!user) {
-    return <Redirect to={requiredType === "admin" ? "/admin/login" : "/"} />;
+    if (requiredTypes.includes("admin")) {
+      return <Redirect to="/admin/login" />;
+    }
+    if (requiredTypes.includes("workshop")) {
+      return <Redirect to="/workshop/login" />;
+    }
+    return <Redirect to="/" />;
   }
 
   if (mustChangePassword) {
     return <Redirect to="/change-password" />;
   }
 
-  if (user.type !== requiredType) {
-    return <Redirect to={user.type === "admin" ? "/admin" : "/dashboard"} />;
+  if (!requiredTypes.includes(user.type)) {
+    return <Redirect to={user.type === "admin" ? "/admin" : user.type === "workshop" ? "/workshop" : "/dashboard"} />;
   }
 
   return <>{children}</>;
@@ -69,7 +76,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (user) {
-    return <Redirect to={user.type === "admin" ? "/admin" : "/dashboard"} />;
+    return <Redirect to={user.type === "admin" ? "/admin" : user.type === "workshop" ? "/workshop" : "/dashboard"} />;
   }
 
   return <>{children}</>;
@@ -89,90 +96,100 @@ function Router() {
           <AdminLoginPage />
         </PublicRoute>
       </Route>
+      <Route path="/workshop/login">
+        <PublicRoute>
+          <WorkshopLoginPage />
+        </PublicRoute>
+      </Route>
 
       {/* Customer Routes */}
       <Route path="/change-password">
         <ChangePasswordPage />
       </Route>
       <Route path="/dashboard">
-        <ProtectedRoute requiredType="customer">
+        <ProtectedRoute requiredTypes={["customer"]}>
           <DashboardPage />
         </ProtectedRoute>
       </Route>
       <Route path="/jobs">
-        <ProtectedRoute requiredType="customer">
+        <ProtectedRoute requiredTypes={["customer"]}>
           <JobsPage />
         </ProtectedRoute>
       </Route>
       <Route path="/jobs/:jobId">
-        <ProtectedRoute requiredType="customer">
+        <ProtectedRoute requiredTypes={["customer"]}>
           <JobDetailPage />
         </ProtectedRoute>
       </Route>
       <Route path="/quotes">
-        <ProtectedRoute requiredType="customer">
+        <ProtectedRoute requiredTypes={["customer"]}>
           <QuotesPage />
         </ProtectedRoute>
       </Route>
       <Route path="/quotes/:quoteId">
-        <ProtectedRoute requiredType="customer">
+        <ProtectedRoute requiredTypes={["customer"]}>
           <QuoteDetailPage />
         </ProtectedRoute>
       </Route>
 
       {/* Admin Routes */}
       <Route path="/admin">
-        <ProtectedRoute requiredType="admin">
+        <ProtectedRoute requiredTypes={["admin"]}>
           <AdminDashboard />
         </ProtectedRoute>
       </Route>
       <Route path="/admin/accounts">
-        <ProtectedRoute requiredType="admin">
+        <ProtectedRoute requiredTypes={["admin"]}>
           <AdminAccountsPage />
         </ProtectedRoute>
       </Route>
       <Route path="/admin/workshop">
-        <ProtectedRoute requiredType="admin">
+        <ProtectedRoute requiredTypes={["admin"]}>
+          <WorkshopBoardPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/workshop">
+        <ProtectedRoute requiredTypes={["admin", "workshop"]}>
           <WorkshopBoardPage />
         </ProtectedRoute>
       </Route>
       <Route path="/admin/customer/:accountCode/jobs/:jobId">
-        <ProtectedRoute requiredType="admin">
+        <ProtectedRoute requiredTypes={["admin"]}>
           <AdminCustomerPortalRoute>
             <JobDetailPage />
           </AdminCustomerPortalRoute>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/customer/:accountCode/jobs">
-        <ProtectedRoute requiredType="admin">
+        <ProtectedRoute requiredTypes={["admin"]}>
           <AdminCustomerPortalRoute>
             <JobsPage />
           </AdminCustomerPortalRoute>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/customer/:accountCode/quotes/:quoteId">
-        <ProtectedRoute requiredType="admin">
+        <ProtectedRoute requiredTypes={["admin"]}>
           <AdminCustomerPortalRoute>
             <QuoteDetailPage />
           </AdminCustomerPortalRoute>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/customer/:accountCode/quotes">
-        <ProtectedRoute requiredType="admin">
+        <ProtectedRoute requiredTypes={["admin"]}>
           <AdminCustomerPortalRoute>
             <QuotesPage />
           </AdminCustomerPortalRoute>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/customer/:accountCode">
-        <ProtectedRoute requiredType="admin">
+        <ProtectedRoute requiredTypes={["admin"]}>
           <AdminCustomerPortalRoute>
             <DashboardPage />
           </AdminCustomerPortalRoute>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/settings">
-        <ProtectedRoute requiredType="admin">
+        <ProtectedRoute requiredTypes={["admin"]}>
           <AdminSettingsPage />
         </ProtectedRoute>
       </Route>

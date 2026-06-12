@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "./queryClient";
 
 interface User {
-  type: "customer" | "admin";
+  type: "customer" | "admin" | "workshop";
   email?: string;
   accountCode?: string;
   accountName?: string;
@@ -18,6 +18,8 @@ interface AuthContextType {
   verifyCustomerOtp: (code: string) => Promise<void>;
   requestAdminOtp: () => Promise<void>;
   verifyAdminOtp: (code: string) => Promise<void>;
+  requestWorkshopOtp: () => Promise<void>;
+  verifyWorkshopOtp: (code: string) => Promise<void>;
   logout: () => Promise<void>;
   clearMustChangePassword: () => void;
 }
@@ -33,6 +35,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     checkAuth();
   }, []);
+
+  function getDefaultRouteForUser(nextUser: User | null): string {
+    if (!nextUser) return "/";
+    if (nextUser.type === "admin") return "/admin";
+    if (nextUser.type === "workshop") return "/workshop";
+    return "/dashboard";
+  }
 
   async function checkAuth() {
     try {
@@ -80,7 +89,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLocation("/admin");
   }
 
+  async function requestWorkshopOtp() {
+    await apiRequest("POST", "/api/auth/workshop/request-otp");
+  }
+
+  async function verifyWorkshopOtp(code: string) {
+    const response = await apiRequest("POST", "/api/auth/workshop/verify-otp", { code });
+    const data = await response.json();
+    queryClient.clear();
+    setUser(data.user);
+    setMustChangePassword(false);
+    setLocation("/workshop");
+  }
+
   async function logout() {
+    const currentUser = user;
     try {
       await apiRequest("POST", "/api/auth/logout");
     } catch (error) {
@@ -89,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryClient.clear();
     setUser(null);
     setMustChangePassword(false);
-    setLocation("/");
+    setLocation(currentUser?.type === "workshop" ? "/workshop/login" : "/");
   }
 
   function clearMustChangePassword() {
@@ -97,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, mustChangePassword, requestCustomerOtp, verifyCustomerOtp, requestAdminOtp, verifyAdminOtp, logout, clearMustChangePassword }}>
+    <AuthContext.Provider value={{ user, isLoading, mustChangePassword, requestCustomerOtp, verifyCustomerOtp, requestAdminOtp, verifyAdminOtp, requestWorkshopOtp, verifyWorkshopOtp, logout, clearMustChangePassword }}>
       {children}
     </AuthContext.Provider>
   );

@@ -97,13 +97,22 @@ function isWorkshopJobType(jobType: unknown): boolean {
 declare module "express-session" {
   interface SessionData {
     user?: {
-      type: "customer" | "admin";
+      type: "customer" | "admin" | "workshop";
       email?: string;
       accountCode?: string;
       accountName?: string;
       mustChangePassword?: boolean;
     };
     adminOtp?: {
+      email: string;
+      codeHash: string;
+      expiresAt: number;
+      attempts: number;
+      sentAt: number;
+      requestIp: string;
+      userAgent?: string;
+    };
+    workshopOtp?: {
       email: string;
       codeHash: string;
       expiresAt: number;
@@ -178,6 +187,7 @@ const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "otto@lvcuk.com").trim().toLower
 const ADMIN_OTP_TTL_MS = 10 * 60 * 1000;
 const ADMIN_OTP_MAX_ATTEMPTS = 5;
 const OTP_EMAIL_SANDBOX_SETTING_KEY = "otp_email_sandbox_enabled";
+const WORKSHOP_TEAM_EMAIL_SETTING_KEY = "workshop_team_email";
 const WORKSHOP_EMAIL_DEMO_MODE_SETTING_KEY = "workshop_email_demo_mode_enabled";
 const WORKSHOP_EMAIL_DEMO_RECIPIENT_SETTING_KEY = "workshop_email_demo_recipient";
 
@@ -246,6 +256,42 @@ async function sendAdminOtpEmail(req: Request, code: string) {
   }
 }
 
+async function sendWorkshopOtpEmail(req: Request, to: string, code: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM || process.env.EMAIL_FROM;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY must be set to send workshop login codes");
+  }
+  if (!from) {
+    throw new Error("RESEND_FROM or EMAIL_FROM must be set to send workshop login codes");
+  }
+
+  const expiresInMinutes = Math.floor(ADMIN_OTP_TTL_MS / 60000);
+
+  const payload: Record<string, unknown> = {
+    from,
+    to: [to],
+    subject: "LVC Workshop board login code",
+    text: `Your LVC Workshop board login code is ${code}. It expires in ${expiresInMinutes} minutes.`,
+    html: `<p>Your LVC Workshop board login code is:</p><p style="font-size:24px;letter-spacing:4px;font-weight:700;">${code}</p><p>It expires in ${expiresInMinutes} minutes.</p>`,
+  };
+  if (process.env.RESEND_REPLY_TO) payload.reply_to = process.env.RESEND_REPLY_TO;
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Resend email delivery failed (${response.status})${body ? `: ${body.slice(0, 300)}` : ""}`);
+  }
+}
+
 async function getBooleanSetting(key: string, defaultValue: boolean): Promise<boolean> {
   const value = await storage.getSystemSetting(key);
   if (value === null) {
@@ -253,6 +299,23 @@ async function getBooleanSetting(key: string, defaultValue: boolean): Promise<bo
   }
 
   return value === "true";
+}
+
+async function getCommunicationSettings() {
+  const otpEmailSandboxEnabled = await getBooleanSetting(OTP_EMAIL_SANDBOX_SETTING_KEY, false);
+  const otpEmailSandboxRecipient = (await storage.getSystemSetting("otp_email_sandbox_recipient")) || ADMIN_EMAIL;
+  const workshopTeamEmail = (await storage.getSystemSetting(WORKSHOP_TEAM_EMAIL_SETTING_KEY)) || "";
+
+  return {
+    otpEmailSandboxEnabled,
+    otpEmailSandboxRecipient,
+    workshopTeamEmail,
+  };
+}
+
+async function getWorkshopTeamEmail(): Promise<string | null> {
+  const email = (await storage.getSystemSetting(WORKSHOP_TEAM_EMAIL_SETTING_KEY))?.trim();
+  return email || null;
 }
 
 async function getWorkshopEmailSettings() {
@@ -471,13 +534,16 @@ function computeUpcomingDate(
 }
 
 // Middleware to check if user is authenticated
-function requireAuth(type?: "customer" | "admin") {
+function requireAuth(type?: "customer" | "admin" | "workshop" | Array<"customer" | "admin" | "workshop">) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.session.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    if (type && req.session.user.type !== type) {
-      return res.status(403).json({ message: "Forbidden" });
+    if (type) {
+      const allowedTypes = Array.isArray(type) ? type : [type];
+      if (!allowedTypes.includes(req.session.user.type)) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
     }
     next();
   };
@@ -763,6 +829,96 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/auth/workshop/request-otp", adminOtpRequestLimiter, async (req, res) => {
+    try {
+      const workshopEmail = await getWorkshopTeamEmail();
+      if (!workshopEmail) {
+        return res.status(400).json({ message: "Workshop email has not been configured by the admin yet" });
+      }
+
+      const key = lockoutKey("admin", `workshop:${workshopEmail}`);
+      const lockedFor = isLockedOut(key);
+      if (lockedFor > 0) {
+        return res.status(429).json({ message: `Workshop login locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
+      }
+
+      const code = generateAdminOtp();
+      req.session.workshopOtp = {
+        email: workshopEmail,
+        codeHash: hashAdminOtp(req.sessionID, code),
+        expiresAt: Date.now() + ADMIN_OTP_TTL_MS,
+        attempts: 0,
+        sentAt: Date.now(),
+        requestIp: clientIp(req),
+        userAgent: (req.headers["user-agent"] as string | undefined) || undefined,
+      };
+
+      try {
+        await sendWorkshopOtpEmail(req, workshopEmail, code);
+      } catch (error) {
+        delete req.session.workshopOtp;
+        console.error("Workshop OTP email error:", error);
+        return res.status(500).json({ message: "Workshop login email is not configured" });
+      }
+
+      await audit(req, "workshop.otp.requested", { actorType: "system", actorId: workshopEmail });
+      res.json({ message: "Code sent", expiresInSeconds: ADMIN_OTP_TTL_MS / 1000 });
+    } catch (error) {
+      console.error("Workshop OTP request error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/workshop/verify-otp", loginRateLimiter, async (req, res) => {
+    try {
+      const parsed = z.object({ code: z.string().regex(/^\d{6}$/, "Enter the 6 digit code") }).safeParse(req.body || {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid code" });
+      }
+
+      const challenge = req.session.workshopOtp;
+      if (!challenge) {
+        return res.status(400).json({ message: "Request a new login code" });
+      }
+
+      const key = lockoutKey("admin", `workshop:${challenge.email}`);
+      const lockedFor = isLockedOut(key);
+      if (lockedFor > 0) {
+        return res.status(429).json({ message: `Workshop login locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
+      }
+
+      if (challenge.expiresAt <= Date.now()) {
+        delete req.session.workshopOtp;
+        return res.status(401).json({ message: "Login code expired" });
+      }
+
+      if (challenge.attempts >= ADMIN_OTP_MAX_ATTEMPTS) {
+        delete req.session.workshopOtp;
+        recordFailure(key);
+        await audit(req, "workshop.otp.too_many_attempts", { actorType: "system", actorId: challenge.email });
+        return res.status(429).json({ message: "Too many incorrect codes. Request a new login code." });
+      }
+
+      const expectedHash = hashAdminOtp(req.sessionID, parsed.data.code);
+      if (!safeStringEqual(expectedHash, challenge.codeHash)) {
+        req.session.workshopOtp = { ...challenge, attempts: challenge.attempts + 1 };
+        recordFailure(key);
+        await audit(req, "workshop.otp.failure", { actorType: "system", actorId: challenge.email });
+        return res.status(401).json({ message: "Invalid login code" });
+      }
+
+      clearFailures(key);
+      await regenerateSession(req);
+      req.session.user = { type: "workshop", email: challenge.email };
+      await audit(req, "workshop.login.success", { actorType: "system", actorId: challenge.email });
+      await saveSession(req);
+      res.json({ user: req.session.user });
+    } catch (error) {
+      console.error("Workshop OTP verify error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.post("/api/auth/admin/login", (_req, res) => {
     res.status(410).json({ message: "Admin password login is disabled. Use email code sign in." });
   });
@@ -790,6 +946,37 @@ export async function registerRoutes(
       }
       res.json({ message: "Logged out" });
     });
+  });
+
+  app.get("/api/admin/settings/communications", requireAuth("admin"), async (_req, res) => {
+    try {
+      res.json(await getCommunicationSettings());
+    } catch (error) {
+      console.error("Communication settings fetch error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/admin/settings/communications", requireAuth("admin"), async (req, res) => {
+    try {
+      const parsed = z.object({
+        otpEmailSandboxEnabled: z.boolean(),
+        workshopTeamEmail: z.string().trim().email("Enter a valid workshop email address").or(z.literal("")),
+      }).safeParse(req.body || {});
+
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid communication settings" });
+      }
+
+      await storage.setSystemSetting(OTP_EMAIL_SANDBOX_SETTING_KEY, String(parsed.data.otpEmailSandboxEnabled));
+      await storage.setSystemSetting("otp_email_sandbox_recipient", ADMIN_EMAIL);
+      await storage.setSystemSetting(WORKSHOP_TEAM_EMAIL_SETTING_KEY, parsed.data.workshopTeamEmail);
+
+      res.json(await getCommunicationSettings());
+    } catch (error) {
+      console.error("Communication settings update error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
   });
 
   // Customer change password (also clears mustChangePassword flag)
@@ -1584,7 +1771,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/workshop-board", requireAuth("admin"), async (req, res) => {
+  app.get("/api/admin/workshop-board", requireAuth(["admin", "workshop"]), async (req, res) => {
     try {
       const board = await storage.getWorkshopBoard();
       res.json(board);
@@ -1594,7 +1781,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/workshop/settings", requireAuth("admin"), async (_req, res) => {
+  app.get("/api/admin/workshop/settings", requireAuth(["admin", "workshop"]), async (_req, res) => {
     try {
       res.json(await getWorkshopEmailSettings());
     } catch (error) {
@@ -1621,7 +1808,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/workshop-board/:jobId/events", requireAuth("admin"), async (req, res) => {
+  app.get("/api/admin/workshop-board/:jobId/events", requireAuth(["admin", "workshop"]), async (req, res) => {
     try {
       const events = await storage.getWorkshopBoardEvents(req.params.jobId);
       res.json(events);
@@ -1631,7 +1818,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/workshop-board/:jobId/move", requireAuth("admin"), async (req, res) => {
+  app.post("/api/admin/workshop-board/:jobId/move", requireAuth(["admin", "workshop"]), async (req, res) => {
     try {
       const { lane, laneOrder, note, sendClientUpdate } = req.body;
 

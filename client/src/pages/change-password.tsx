@@ -50,7 +50,7 @@ export default function ChangePasswordPage() {
         throw new Error(data.message || "Failed to update password");
       }
       clearMustChangePassword();
-      setLocation(user?.type === "admin" ? "/admin" : "/dashboard");
+      setLocation(user?.type === "admin" ? "/admin" : user?.type === "workshop" ? "/workshop" : "/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update password");
     } finally {
@@ -72,6 +72,10 @@ export default function ChangePasswordPage() {
 
   if (user.type === "admin") {
     return <Redirect to="/admin" />;
+  }
+
+  if (user.type === "workshop") {
+    return <Redirect to="/workshop" />;
   }
 
   if (!mustChangePassword) {

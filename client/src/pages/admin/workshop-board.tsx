@@ -12,6 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
+import { WorkshopLayout } from "@/components/workshop-layout";
 
 type WorkshopSettings = {
   workshopEmailDemoModeEnabled: boolean;
@@ -74,6 +76,7 @@ function formatDate(value: string | null | undefined): string | null {
 }
 
 export default function WorkshopBoardPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
@@ -161,6 +164,8 @@ export default function WorkshopBoardPage() {
 
   const demoModeEnabled = settings?.workshopEmailDemoModeEnabled ?? true;
   const demoRecipient = settings?.workshopEmailDemoRecipient ?? "otto@lvcuk.com";
+  const isAdminUser = user?.type === "admin";
+  const Layout = isAdminUser ? AdminLayout : WorkshopLayout;
 
   function openMoveDialog(item: WorkshopBoardResponseItem, lane: WorkshopLane) {
     if (item.card.boardLane === lane) {
@@ -173,7 +178,7 @@ export default function WorkshopBoardPage() {
   }
 
   return (
-    <AdminLayout>
+    <Layout>
       <div className="space-y-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
@@ -195,14 +200,22 @@ export default function WorkshopBoardPage() {
             </div>
             <div className="flex items-center gap-3 self-start lg:self-center">
               {settingsLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
-              <Label htmlFor="workshop-demo-mode" className="text-sm font-medium">Demo mode</Label>
-              <Switch
-                id="workshop-demo-mode"
-                checked={demoModeEnabled}
-                disabled={settingsLoading || toggleDemoModeMutation.isPending}
-                onCheckedChange={(checked) => toggleDemoModeMutation.mutate(checked)}
-                data-testid="switch-workshop-demo-mode"
-              />
+              {isAdminUser ? (
+                <>
+                  <Label htmlFor="workshop-demo-mode" className="text-sm font-medium">Demo mode</Label>
+                  <Switch
+                    id="workshop-demo-mode"
+                    checked={demoModeEnabled}
+                    disabled={settingsLoading || toggleDemoModeMutation.isPending}
+                    onCheckedChange={(checked) => toggleDemoModeMutation.mutate(checked)}
+                    data-testid="switch-workshop-demo-mode"
+                  />
+                </>
+              ) : (
+                <Badge variant={demoModeEnabled ? "secondary" : "outline"}>
+                  {demoModeEnabled ? "Demo Mode Active" : "Live Updates Active"}
+                </Badge>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -264,7 +277,7 @@ export default function WorkshopBoardPage() {
                                 <CardTitle className="text-base">{item.card.jobId}</CardTitle>
                                 <CardDescription>{item.job?.accountCode || "Unknown account"}</CardDescription>
                               </div>
-                              {item.job ? (
+                              {isAdminUser && item.job ? (
                                 <a
                                   href={`/admin/customer/${encodeURIComponent(item.job.accountCode)}/jobs/${encodeURIComponent(item.job.jobId)}`}
                                   className="text-muted-foreground transition hover:text-foreground"
@@ -408,6 +421,6 @@ export default function WorkshopBoardPage() {
           </Card>
         ) : null}
       </div>
-    </AdminLayout>
+    </Layout>
   );
 }
