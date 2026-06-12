@@ -51,6 +51,7 @@ export default function AdminSettingsPage() {
   });
 
   const sandboxRecipient = communicationSettings?.otpEmailSandboxRecipient || "otto@lvcuk.com";
+  const workshopLoginUrl = typeof window !== "undefined" ? `${window.location.origin}/workshop/login` : "/workshop/login";
 
   return (
     <AdminLayout>
@@ -120,6 +121,14 @@ export default function AdminSettingsPage() {
                 placeholder="workshop@lvcuk.com"
                 data-testid="input-workshop-team-email"
               />
+              <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-2">
+                <p>
+                  Immediate workshop link: <span className="font-medium text-foreground">{workshopLoginUrl}</span>
+                </p>
+                <p>
+                  Railway only gives one automatic <span className="font-medium text-foreground">.up.railway.app</span> domain per service. If you later attach a dedicated host such as <span className="font-medium text-foreground">workshop.yourdomain.com</span> and set <span className="font-medium text-foreground">WORKSHOP_PUBLIC_HOST</span>, that host will redirect straight into the workshop login flow.
+                </p>
+              </div>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Customer Enquiries</span>

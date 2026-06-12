@@ -7,6 +7,7 @@ import { startLiveJobsAutoImport } from "./live-import";
 
 const app = express();
 const httpServer = createServer(app);
+const workshopPublicHost = (process.env.WORKSHOP_PUBLIC_HOST || "").trim().toLowerCase();
 
 declare module "http" {
   interface IncomingMessage {
@@ -54,6 +55,21 @@ if (isProduction || process.env.FORCE_HTTPS === "true") {
       return res.redirect(301, `https://${req.headers.host}${req.url}`);
     }
     next();
+  });
+}
+
+if (workshopPublicHost) {
+  app.use((req, res, next) => {
+    const requestHost = (req.hostname || "").trim().toLowerCase();
+    if (!requestHost || requestHost !== workshopPublicHost) {
+      return next();
+    }
+
+    if (req.path.startsWith("/api") || req.path.startsWith("/workshop") || req.path.startsWith("/assets/") || req.path === "/favicon.ico") {
+      return next();
+    }
+
+    return res.redirect(302, "/workshop/login");
   });
 }
 
