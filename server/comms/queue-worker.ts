@@ -318,6 +318,76 @@ export async function runCommsWorkerBatch(): Promise<{ batchId: string; processe
   return { batchId, processed: items.length, sent, failed, suppressed, skippedManualMode };
 }
 
+export async function runCommsWorkerForJob(
+  externalJobId: string,
+  opts: { manualOnly?: boolean } = {},
+): Promise<{ batchId: string; processed: number; sent: number; failed: number; suppressed: number; skippedManualMode: number }> {
+  const batchId = crypto.randomUUID();
+  const workerId = `worker-${batchId}`;
+  const manualMode = await isCommsManualMode();
+
+  await releaseStaleLeases().catch(() => null);
+
+  const { db } = await import("../db");
+  const { commsQueue } = await import("@shared/schema");
+  const { and, asc, eq, isNull, lt, lte, or } = await import("drizzle-orm");
+  const now = new Date();
+
+  let items = await db
+    .select()
+    .from(commsQueue)
+    .where(
+      and(
+        eq(commsQueue.externalJobId, externalJobId),
+        eq(commsQueue.state, "due"),
+        lte(commsQueue.dueAt, now),
+        or(isNull(commsQueue.lockedAt), lt(commsQueue.leaseExpiresAt, now))!,
+      )!,
+    )
+    .orderBy(asc(commsQueue.dueAt))
+    .limit(BATCH_SIZE);
+
+  if (opts.manualOnly) {
+    items = items.filter((item) => item.triggerType === "manual");
+  }
+
+  let sent = 0;
+  let failed = 0;
+  let suppressed = 0;
+  let skippedManualMode = 0;
+
+  for (const item of items) {
+    if (manualMode && item.triggerType !== "manual") {
+      skippedManualMode++;
+      continue;
+    }
+
+    try {
+      await processQueueItem(item, workerId);
+      const updated = await (async () => {
+        const { db } = await import("../db");
+        const { commsQueue } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        const [q] = await db.select().from(commsQueue).where(eq(commsQueue.id, item.id));
+        return q;
+      })();
+
+      if (updated?.state === "sent") sent++;
+      else if (updated?.state === "failed") failed++;
+      else if (updated?.state === "suppressed") suppressed++;
+    } catch {
+      failed++;
+    }
+  }
+
+  log(
+    `Comms worker job batch ${batchId} (${externalJobId}) — ${items.length} items: ${sent} sent, ${failed} failed, ${suppressed} suppressed${manualMode ? `, ${skippedManualMode} skipped (manual mode)` : ""}`,
+    "comms-worker",
+  );
+
+  return { batchId, processed: items.length, sent, failed, suppressed, skippedManualMode };
+}
+
 export function startCommsQueueWorker(): void {
   const intervalMs = Math.max(
     Number.parseInt(process.env.COMMS_WORKER_INTERVAL_MS || "60000", 10) || 60000,

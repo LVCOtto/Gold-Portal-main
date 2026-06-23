@@ -26,6 +26,13 @@ interface JobEntry {
     suppressionReason: string | null;
     escalationFlag: boolean;
   } | null;
+  lastAction: {
+    outcome: string;
+    triggerType: string;
+    sentAt: string | null;
+    completedAt: string | null;
+    errorMessage: string | null;
+  } | null;
 }
 
 function CommsBadge({ status }: { status: string }) {
@@ -57,6 +64,36 @@ function DueBadge({ dueAt }: { dueAt: string | null }) {
   );
 }
 
+function LastActionBadge({ action }: { action: JobEntry["lastAction"] }) {
+  if (!action) return <span className="text-xs text-muted-foreground">—</span>;
+
+  const colorClass =
+    action.outcome === "sent"
+      ? "text-green-700 dark:text-green-400"
+      : action.outcome === "failed"
+        ? "text-red-700 dark:text-red-400"
+        : action.outcome === "suppressed"
+          ? "text-yellow-700 dark:text-yellow-400"
+          : "text-muted-foreground";
+
+  const stamp = action.sentAt ?? action.completedAt;
+
+  return (
+    <div className="space-y-0.5">
+      <div className={`text-xs font-medium ${colorClass}`}>{action.outcome}</div>
+      <div className="text-[11px] text-muted-foreground">
+        {action.triggerType}
+        {stamp ? ` · ${format(new Date(stamp), "dd/MM HH:mm")}` : ""}
+      </div>
+      {action.outcome === "failed" && action.errorMessage ? (
+        <div className="text-[10px] text-red-600 dark:text-red-400 truncate max-w-[170px]" title={action.errorMessage}>
+          {action.errorMessage}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function CommsJobsPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -71,15 +108,17 @@ export default function CommsJobsPage() {
   });
 
   const [search, setSearch] = useState("");
+  const [jobTypeContains, setJobTypeContains] = useState("");
   const [commsStatusFilter, setCommsStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const pageSize = 50;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["/api/comms/jobs", search, commsStatusFilter, page],
+    queryKey: ["/api/comms/jobs", search, jobTypeContains, commsStatusFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
       if (search) params.set("search", search);
+      if (jobTypeContains) params.set("jobTypeContains", jobTypeContains);
       if (commsStatusFilter !== "all") params.set("commsStatus", commsStatusFilter);
       const res = await fetch(`/api/comms/jobs?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load jobs");
@@ -88,10 +127,28 @@ export default function CommsJobsPage() {
   });
 
   const triggerMutation = useMutation({
-    mutationFn: (jobId: string) => apiRequest("POST", `/api/comms/jobs/${jobId}/trigger-update`),
-    onSuccess: () => {
-      toast({ title: "Update queued", description: "A comms update has been queued for immediate send." });
+    mutationFn: async (jobId: string) => {
+      const res = await apiRequest("POST", `/api/comms/jobs/${jobId}/trigger-update?runNow=1`);
+      return res.json() as Promise<{
+        queued: boolean;
+        queueItemId: string;
+        note?: string;
+        worker?: { sent: number; failed: number; suppressed: number; processed: number } | null;
+      }>;
+    },
+    onSuccess: (result) => {
+      if (result.worker?.sent) {
+        toast({ title: "Update sent", description: "The update was sent immediately." });
+      } else if (result.worker?.failed) {
+        toast({ title: "Send failed", description: "The update was queued but delivery failed. Check Audit/Queue for details.", variant: "destructive" });
+      } else if (result.note === "already queued") {
+        toast({ title: "Already queued", description: "An update was already due for this job. It has been processed now." });
+      } else {
+        toast({ title: "Update queued", description: "The update is queued and will be processed by the worker." });
+      }
       qc.invalidateQueries({ queryKey: ["/api/comms/jobs"] });
+      qc.invalidateQueries({ queryKey: ["/api/comms/queue/due"] });
+      qc.invalidateQueries({ queryKey: ["/api/comms/queue/summary"] });
     },
     onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed", variant: "destructive" }),
   });
@@ -142,6 +199,12 @@ export default function CommsJobsPage() {
               className="pl-9"
             />
           </div>
+          <Input
+            placeholder="Job type contains (comma-separated phrases)"
+            value={jobTypeContains}
+            onChange={(e) => { setJobTypeContains(e.target.value); setPage(1); }}
+            className="w-full sm:w-[330px]"
+          />
           <Select value={commsStatusFilter} onValueChange={(v) => { setCommsStatusFilter(v); setPage(1); }}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Comms status" />
@@ -170,19 +233,20 @@ export default function CommsJobsPage() {
                   <th className="text-left px-4 py-3 font-medium text-muted-foreground">Comms</th>
                   <th className="text-left px-4 py-3 font-medium text-muted-foreground">Next contact</th>
                   <th className="text-left px-4 py-3 font-medium text-muted-foreground">Last sent</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Last action</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                       <RefreshCw className="h-5 w-5 animate-spin inline mr-2" />Loading…
                     </td>
                   </tr>
                 ) : jobs.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No jobs found</td>
+                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">No jobs found</td>
                   </tr>
                 ) : (
                   jobs.map((job) => (
@@ -210,13 +274,17 @@ export default function CommsJobsPage() {
                           : "Never"}
                       </td>
                       <td className="px-4 py-3">
+                        <LastActionBadge action={job.lastAction} />
+                      </td>
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-1 justify-end">
                           <Button
                             size="icon"
                             variant="ghost"
                             className="h-7 w-7"
-                            title="Send update now"
+                            title="Send update now (process immediately)"
                             onClick={() => triggerMutation.mutate(job.externalJobId)}
+                            disabled={triggerMutation.isPending}
                           >
                             <Zap className="h-3.5 w-3.5" />
                           </Button>

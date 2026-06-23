@@ -101,8 +101,30 @@ export default function CommsJobDetailPage() {
   });
 
   const triggerMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/comms/jobs/${jobId}/trigger-update`),
-    onSuccess: () => { toast({ title: "Update queued" }); qc.invalidateQueries({ queryKey: [`/api/comms/jobs/${jobId}`] }); },
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/comms/jobs/${jobId}/trigger-update?runNow=1`);
+      return res.json() as Promise<{
+        queued: boolean;
+        queueItemId: string;
+        note?: string;
+        worker?: { sent: number; failed: number; suppressed: number; processed: number } | null;
+      }>;
+    },
+    onSuccess: (result) => {
+      if (result.worker?.sent) {
+        toast({ title: "Update sent", description: "The update was sent immediately." });
+      } else if (result.worker?.failed) {
+        toast({ title: "Send failed", description: "Delivery failed. Check the audit entry for details.", variant: "destructive" });
+      } else if (result.note === "already queued") {
+        toast({ title: "Already queued", description: "An update was already due and has been processed now." });
+      } else {
+        toast({ title: "Update queued" });
+      }
+      qc.invalidateQueries({ queryKey: [`/api/comms/jobs/${jobId}`] });
+      qc.invalidateQueries({ queryKey: [`/api/comms/jobs/${jobId}/comms`] });
+      qc.invalidateQueries({ queryKey: ["/api/comms/queue/due"] });
+      qc.invalidateQueries({ queryKey: ["/api/comms/queue/summary"] });
+    },
     onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed", variant: "destructive" }),
   });
 

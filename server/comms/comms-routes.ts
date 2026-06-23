@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireCommsAuth } from "./middleware";
 import { registerCommsAuthRoutes } from "./auth-routes";
 import { runCommsImport } from "./import-worker";
-import { runCommsWorkerBatch } from "./queue-worker";
+import { runCommsWorkerBatch, runCommsWorkerForJob } from "./queue-worker";
 import {
   listCommsSnapshots,
   getCommsSnapshot,
@@ -31,7 +31,7 @@ import {
   setCommsManualMode,
 } from "./comms-storage";
 import { db } from "../db";
-import { commsQueue, commsJobStates, commsJobSnapshots } from "@shared/schema";
+import { commsQueue, commsJobStates, commsJobSnapshots, commsAuditLog } from "@shared/schema";
 import { eq, and, lte, gte, desc, sql, inArray } from "drizzle-orm";
 
 const router = Router();
@@ -53,20 +53,69 @@ router.get("/jobs", async (req, res, next) => {
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50));
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
     const jobType = typeof req.query.jobType === "string" ? req.query.jobType : undefined;
+    const jobTypeContains = typeof req.query.jobTypeContains === "string" ? req.query.jobTypeContains : undefined;
+    const jobTypePhrases = jobTypeContains
+      ? jobTypeContains
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .slice(0, 20)
+      : undefined;
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
     const commsStatus = typeof req.query.commsStatus === "string" ? req.query.commsStatus : undefined;
 
-    const { snapshots, total } = await listCommsSnapshots({ search, jobType, status, page, pageSize });
+    const { snapshots, total } = await listCommsSnapshots({ search, jobType, jobTypePhrases, status, page, pageSize });
 
     // Batch-fetch states to avoid N+1
     const jobIds = snapshots.map((s) => s.externalJobId);
     let stateMap: Record<string, (typeof commsJobStates.$inferSelect)> = {};
+    const latestAuditMap: Record<
+      string,
+      {
+        outcome: string;
+        triggerType: string;
+        sentAt: Date | null;
+        completedAt: Date | null;
+        errorMessage: string | null;
+      }
+    > = {};
+
     if (jobIds.length > 0) {
       const states = await db.select().from(commsJobStates).where(inArray(commsJobStates.externalJobId, jobIds));
       stateMap = Object.fromEntries(states.map((s) => [s.externalJobId, s]));
+
+      const auditRows = await db
+        .select({
+          externalJobId: commsAuditLog.externalJobId,
+          outcome: commsAuditLog.outcome,
+          triggerType: commsAuditLog.triggerType,
+          sentAt: commsAuditLog.sentAt,
+          completedAt: commsAuditLog.completedAt,
+          errorMessage: commsAuditLog.errorMessage,
+          createdAt: commsAuditLog.createdAt,
+        })
+        .from(commsAuditLog)
+        .where(inArray(commsAuditLog.externalJobId, jobIds))
+        .orderBy(desc(commsAuditLog.createdAt));
+
+      for (const row of auditRows) {
+        if (!latestAuditMap[row.externalJobId]) {
+          latestAuditMap[row.externalJobId] = {
+            outcome: row.outcome,
+            triggerType: row.triggerType,
+            sentAt: row.sentAt,
+            completedAt: row.completedAt,
+            errorMessage: row.errorMessage,
+          };
+        }
+      }
     }
 
-    const enriched = snapshots.map((snap) => ({ ...snap, state: stateMap[snap.externalJobId] ?? null }));
+    const enriched = snapshots.map((snap) => ({
+      ...snap,
+      state: stateMap[snap.externalJobId] ?? null,
+      lastAction: latestAuditMap[snap.externalJobId] ?? null,
+    }));
 
     // Filter by commsStatus if requested
     const filtered =
@@ -157,6 +206,7 @@ router.post("/jobs/:jobId/trigger-update", async (req, res, next) => {
     if (!snapshot) return res.status(404).json({ error: "Job not found" });
 
     const operator = req.session.commsOperator!.email;
+    const runNow = req.query.runNow !== "0";
     await getOrCreateCommsState(req.params.jobId);
 
     // Prevent duplicate pending queue items for the same job
@@ -167,7 +217,10 @@ router.post("/jobs/:jobId/trigger-update", async (req, res, next) => {
       .limit(1);
 
     if (existingDue.length > 0) {
-      return res.json({ queued: true, queueItemId: existingDue[0].id, note: "already queued" });
+      const worker = runNow
+        ? await runCommsWorkerForJob(req.params.jobId, { manualOnly: true })
+        : null;
+      return res.json({ queued: true, queueItemId: existingDue[0].id, note: "already queued", worker });
     }
 
     const queueItem = await enqueueCommsJob(req.params.jobId, {
@@ -181,7 +234,11 @@ router.post("/jobs/:jobId/trigger-update", async (req, res, next) => {
       lastManualActionBy: operator,
     });
 
-    return res.json({ queued: true, queueItemId: queueItem.id });
+    const worker = runNow
+      ? await runCommsWorkerForJob(req.params.jobId, { manualOnly: true })
+      : null;
+
+    return res.json({ queued: true, queueItemId: queueItem.id, worker });
   } catch (err) {
     next(err);
   }

@@ -64,11 +64,12 @@ export async function getCommsSnapshot(externalJobId: string): Promise<CommsJobS
 export async function listCommsSnapshots(filters: {
   search?: string;
   jobType?: string;
+  jobTypePhrases?: string[];
   status?: string;
   page?: number;
   pageSize?: number;
 }): Promise<{ snapshots: CommsJobSnapshot[]; total: number }> {
-  const { search, jobType, status, page = 1, pageSize = 50 } = filters;
+  const { search, jobType, jobTypePhrases, status, page = 1, pageSize = 50 } = filters;
   const conditions = [];
   if (search) {
     conditions.push(
@@ -80,6 +81,9 @@ export async function listCommsSnapshots(filters: {
     );
   }
   if (jobType) conditions.push(ilike(commsJobSnapshots.jobType, `%${jobType}%`));
+  if (jobTypePhrases && jobTypePhrases.length > 0) {
+    conditions.push(or(...jobTypePhrases.map((phrase) => ilike(commsJobSnapshots.jobType, `%${phrase}%`)))!);
+  }
   if (status) conditions.push(ilike(commsJobSnapshots.status, `%${status}%`));
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
