@@ -94,7 +94,7 @@ export default function CommsLoginPage() {
             <CardContent>
               {step === "email" ? (
                 <Form {...emailForm}>
-                  <form onSubmit={emailForm.handleSubmit(onEmailSubmit)} className="space-y-4">
+                  <form onSubmit={emailForm.handleSubmit(onEmailSubmit)} className="space-y-4" autoComplete="on">
                     <FormField
                       control={emailForm.control}
                       name="email"
@@ -104,7 +104,7 @@ export default function CommsLoginPage() {
                           <FormControl>
                             <div className="relative">
                               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                              <Input type="email" placeholder="you@example.com" className="pl-9" {...field} />
+                              <Input type="email" placeholder="you@example.com" className="pl-9" autoComplete="email" {...field} />
                             </div>
                           </FormControl>
                           <FormMessage />
@@ -119,7 +119,7 @@ export default function CommsLoginPage() {
                 </Form>
               ) : (
                 <Form {...codeForm}>
-                  <form onSubmit={codeForm.handleSubmit(onCodeSubmit)} className="space-y-4">
+                  <form key="otp-form" onSubmit={codeForm.handleSubmit(onCodeSubmit)} className="space-y-4" autoComplete="off">
                     <FormField
                       control={codeForm.control}
                       name="code"
@@ -130,12 +130,21 @@ export default function CommsLoginPage() {
                             <div className="relative">
                               <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                               <Input
-                                type="text"
+                                type="tel"
+                                name="otp"
                                 inputMode="numeric"
+                                autoComplete="one-time-code"
+                                autoCorrect="off"
+                                spellCheck={false}
+                                enterKeyHint="done"
+                                pattern="[0-9]*"
                                 maxLength={6}
                                 placeholder="123456"
                                 className="pl-9 text-center text-xl tracking-[0.5em] font-mono"
-                                {...field}
+                                value={field.value ?? ""}
+                                onChange={(e) => field.onChange(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                                onBlur={field.onBlur}
+                                ref={field.ref}
                               />
                             </div>
                           </FormControl>
