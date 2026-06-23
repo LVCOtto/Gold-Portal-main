@@ -16,6 +16,7 @@ import { parse as dateFnsParse, isValid as isValidDate } from "date-fns";
 import { getDefaultWorkshopLane, isWorkshopLane } from "@shared/schema";
 import { storage } from "./storage";
 import { pool } from "./db";
+import { commsRouter } from "./comms/comms-routes";
 
 const workshopJobTypeMatchers = (process.env.WORKSHOP_JOB_TYPE_MATCHES || "workshop")
   .split(",")
@@ -120,6 +121,18 @@ declare module "express-session" {
       sentAt: number;
       requestIp: string;
       userAgent?: string;
+    };
+    commsOtp?: {
+      email: string;
+      codeHash: string;
+      expiresAt: number;
+      attempts: number;
+      sentAt: number;
+      requestIp: string;
+    };
+    commsOperator?: {
+      email: string;
+      loginAt: string;
     };
   }
 }
@@ -2429,6 +2442,9 @@ export async function registerRoutes(
     res.setHeader("Content-Disposition", "attachment; filename=quotes_template.csv");
     res.send(csv);
   });
+
+  // ==================== COMMS QUEUE ====================
+  app.use("/api/comms", commsRouter);
 
   return httpServer;
 }

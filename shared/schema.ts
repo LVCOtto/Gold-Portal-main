@@ -317,6 +317,170 @@ export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
 
+// ─────────────────────────────────────────────
+// COMMS QUEUE SYSTEM
+// ─────────────────────────────────────────────
+
+// 1. Comms Job Snapshots — Protean read model, written only by import worker
+export const commsJobSnapshots = pgTable("comms_job_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  externalJobId: text("external_job_id").notNull().unique(),
+  accountCode: text("account_code"),
+  clientName: text("client_name"),
+  siteName: text("site_name"),
+  jobType: text("job_type"),
+  status: text("status"),
+  priority: text("priority"),
+  shortDescription: text("short_description"),
+  engineerName: text("engineer_name"),
+  lastVisitDate: timestamp("last_visit_date"),
+  nextActionDueDate: timestamp("next_action_due_date"),
+  createdDate: timestamp("created_date"),
+  lastUpdatedDate: timestamp("last_updated_date"),
+  rawImportMetadata: text("raw_import_metadata"),
+  importBatchId: varchar("import_batch_id"),
+  lastSyncedAt: timestamp("last_synced_at").defaultNow().notNull(),
+}, (table) => ({
+  externalJobIdIdx: index("comms_snapshot_external_job_id_idx").on(table.externalJobId),
+  accountCodeIdx: index("comms_snapshot_account_code_idx").on(table.accountCode),
+}));
+
+// 2. Comms Job States — portal-owned workflow state
+export const commsJobStates = pgTable("comms_job_states", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  externalJobId: text("external_job_id").notNull().unique(),
+  commsStatus: text("comms_status").notNull().default("active"), // active | suppressed | paused | manual_hold | completed
+  lastCommsSentAt: timestamp("last_comms_sent_at"),
+  nextCommsDueAt: timestamp("next_comms_due_at"),
+  suppressedAt: timestamp("suppressed_at"),
+  suppressedBy: text("suppressed_by"),
+  suppressionReason: text("suppression_reason"),
+  lastKnownStatus: text("last_known_status"),
+  statusChangedAt: timestamp("status_changed_at"),
+  assignedOperator: text("assigned_operator"),
+  templateOverrideKey: text("template_override_key"),
+  escalationFlag: boolean("escalation_flag").notNull().default(false),
+  internalTags: text("internal_tags"), // JSON array
+  cooldownDaysOverride: integer("cooldown_days_override"),
+  lastManualActionAt: timestamp("last_manual_action_at"),
+  lastManualActionBy: text("last_manual_action_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  externalJobIdIdx: index("comms_state_external_job_id_idx").on(table.externalJobId),
+  commsStatusIdx: index("comms_state_status_idx").on(table.commsStatus),
+  nextDueIdx: index("comms_state_next_due_idx").on(table.nextCommsDueAt),
+}));
+
+// 3. Comms Notes — operator notes per job
+export const commsNotes = pgTable("comms_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  externalJobId: text("external_job_id").notNull(),
+  note: text("note").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  externalJobIdIdx: index("comms_notes_external_job_id_idx").on(table.externalJobId),
+}));
+
+// 4. Comms Queue — state machine per job
+export const commsQueue = pgTable("comms_queue", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  externalJobId: text("external_job_id").notNull(),
+  state: text("state").notNull().default("due"), // due | processing | sent | failed | suppressed | manual_hold
+  dueAt: timestamp("due_at").notNull(),
+  lockedAt: timestamp("locked_at"),
+  lockedBy: text("locked_by"),
+  leaseExpiresAt: timestamp("lease_expires_at"),
+  batchId: varchar("batch_id"),
+  triggerType: text("trigger_type").notNull().default("scheduled"), // scheduled | manual | status_change | import
+  triggeredBy: text("triggered_by"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  externalJobIdIdx: index("comms_queue_external_job_id_idx").on(table.externalJobId),
+  stateIdx: index("comms_queue_state_idx").on(table.state),
+  dueAtIdx: index("comms_queue_due_at_idx").on(table.dueAt),
+}));
+
+// 5. Comms Templates — operator-editable message templates
+export const commsTemplates = pgTable("comms_templates", {
+  id: varchar("id").primaryKey(), // stable slug e.g. 'in_progress_update'
+  displayName: text("display_name").notNull(),
+  routeKey: text("route_key").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  tone: text("tone"), // formal | friendly | urgent
+  operatorNotes: text("operator_notes"),
+  defaultCooldownDays: integer("default_cooldown_days").notNull().default(7),
+  enabled: boolean("enabled").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// 6. Comms Template Versions — immutable edit history
+export const commsTemplateVersions = pgTable("comms_template_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull(),
+  snapshot: text("snapshot").notNull(), // JSON of full previous template row
+  changedBy: text("changed_by").notNull(),
+  changedAt: timestamp("changed_at").defaultNow().notNull(),
+}, (table) => ({
+  templateIdIdx: index("comms_template_versions_template_id_idx").on(table.templateId),
+}));
+
+// 7. Comms Audit Log — append-only record of every send attempt
+export const commsAuditLog = pgTable("comms_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  externalJobId: text("external_job_id").notNull(),
+  queueItemId: varchar("queue_item_id"),
+  triggerType: text("trigger_type").notNull(), // auto | manual
+  templateId: varchar("template_id"),
+  renderedSubject: text("rendered_subject"),
+  renderedBody: text("rendered_body"),
+  recipientEmail: text("recipient_email"),
+  recipientName: text("recipient_name"),
+  outcome: text("outcome").notNull(), // sent | failed | suppressed | skipped
+  errorMessage: text("error_message"),
+  operatorId: text("operator_id"),
+  queuedAt: timestamp("queued_at"),
+  sentAt: timestamp("sent_at"),
+  completedAt: timestamp("completed_at"),
+  metadata: text("metadata"), // JSON blob
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  externalJobIdIdx: index("comms_audit_external_job_id_idx").on(table.externalJobId),
+  outcomeIdx: index("comms_audit_outcome_idx").on(table.outcome),
+  createdAtIdx: index("comms_audit_created_at_idx").on(table.createdAt),
+}));
+
+// Comms Insert Schemas
+export const insertCommsJobSnapshotSchema = createInsertSchema(commsJobSnapshots).omit({ id: true, lastSyncedAt: true });
+export const insertCommsJobStateSchema = createInsertSchema(commsJobStates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCommsNoteSchema = createInsertSchema(commsNotes).omit({ id: true, createdAt: true });
+export const insertCommsQueueSchema = createInsertSchema(commsQueue).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCommsTemplateVersionSchema = createInsertSchema(commsTemplateVersions).omit({ id: true, changedAt: true });
+export const insertCommsAuditLogSchema = createInsertSchema(commsAuditLog).omit({ id: true, createdAt: true });
+
+// Comms Types
+export type CommsJobSnapshot = typeof commsJobSnapshots.$inferSelect;
+export type InsertCommsJobSnapshot = z.infer<typeof insertCommsJobSnapshotSchema>;
+export type CommsJobState = typeof commsJobStates.$inferSelect;
+export type InsertCommsJobState = z.infer<typeof insertCommsJobStateSchema>;
+export type CommsNote = typeof commsNotes.$inferSelect;
+export type InsertCommsNote = z.infer<typeof insertCommsNoteSchema>;
+export type CommsQueueItem = typeof commsQueue.$inferSelect;
+export type InsertCommsQueueItem = z.infer<typeof insertCommsQueueSchema>;
+export type CommsTemplate = typeof commsTemplates.$inferSelect;
+export type CommsTemplateVersion = typeof commsTemplateVersions.$inferSelect;
+export type InsertCommsTemplateVersion = z.infer<typeof insertCommsTemplateVersionSchema>;
+export type CommsAuditLogEntry = typeof commsAuditLog.$inferSelect;
+export type InsertCommsAuditLogEntry = z.infer<typeof insertCommsAuditLogSchema>;
+
 export const WORKSHOP_LANES = [
   "entry",
   "booked_in",

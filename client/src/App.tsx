@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { CommsAuthProvider, useCommsAuth } from "@/lib/comms-auth";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import AdminLoginPage from "@/pages/admin-login";
@@ -20,6 +21,12 @@ import WorkshopBoardPage from "@/pages/admin/workshop-board";
 import { AdminCustomerPortalRoute } from "@/pages/admin/customer-portal-route";
 import AdminSettingsPage from "@/pages/admin/settings";
 import ChangePasswordPage from "@/pages/change-password";
+import CommsLoginPage from "@/pages/comms/login";
+import CommsJobsPage from "@/pages/comms/jobs";
+import CommsJobDetailPage from "@/pages/comms/job-detail";
+import CommsQueuePage from "@/pages/comms/queue";
+import CommsTemplatesPage from "@/pages/comms/templates";
+import CommsAuditPage from "@/pages/comms/audit";
 import { Loader2 } from "lucide-react";
 
 function LoadingScreen() {
@@ -61,6 +68,22 @@ function ProtectedRoute({
     return <Redirect to={user.type === "admin" ? "/admin" : user.type === "workshop" ? "/workshop" : "/dashboard"} />;
   }
 
+  return <>{children}</>;
+}
+
+/** Guard for comms portal routes — redirects to /comms/login if not authenticated */
+function CommsRoute({ children }: { children: React.ReactNode }) {
+  const { operator, isLoading } = useCommsAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!operator) return <Redirect to="/comms/login" />;
+  return <>{children}</>;
+}
+
+/** Public comms route — redirects to /comms/jobs if already authenticated */
+function CommsPublicRoute({ children }: { children: React.ReactNode }) {
+  const { operator, isLoading } = useCommsAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (operator) return <Redirect to="/comms/jobs" />;
   return <>{children}</>;
 }
 
@@ -194,21 +217,57 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* Comms Portal Routes — operator only, never customer-facing */}
+      <Route path="/comms/login">
+        <CommsPublicRoute>
+          <CommsLoginPage />
+        </CommsPublicRoute>
+      </Route>
+      <Route path="/comms/jobs/:jobId">
+        <CommsRoute>
+          <CommsJobDetailPage />
+        </CommsRoute>
+      </Route>
+      <Route path="/comms/jobs">
+        <CommsRoute>
+          <CommsJobsPage />
+        </CommsRoute>
+      </Route>
+      <Route path="/comms/queue">
+        <CommsRoute>
+          <CommsQueuePage />
+        </CommsRoute>
+      </Route>
+      <Route path="/comms/templates">
+        <CommsRoute>
+          <CommsTemplatesPage />
+        </CommsRoute>
+      </Route>
+      <Route path="/comms/audit">
+        <CommsRoute>
+          <CommsAuditPage />
+        </CommsRoute>
+      </Route>
+      <Route path="/comms">
+        <Redirect to="/comms/jobs" />
+      </Route>
+
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
   );
 }
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>
+          <CommsAuthProvider>
           <AuthProvider>
             <Router />
             <Toaster />
           </AuthProvider>
+          </CommsAuthProvider>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
