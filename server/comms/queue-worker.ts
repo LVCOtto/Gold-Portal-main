@@ -31,6 +31,7 @@ const DEFAULT_COOLDOWN_DAYS = Number(process.env.COMMS_DEFAULT_COOLDOWN_DAYS || 
 const BATCH_SIZE = Number(process.env.COMMS_WORKER_BATCH_SIZE || "20");
 const COMMS_DEMO_MODE = process.env.COMMS_DEMO_MODE === "true";
 const COMMS_DEMO_RECIPIENT = process.env.COMMS_DEMO_RECIPIENT || "";
+const COMMS_FALLBACK_RECIPIENT = process.env.COMMS_FALLBACK_RECIPIENT || "";
 
 let workerIntervalHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -120,13 +121,12 @@ async function processQueueItem(item: CommsQueueItem, workerId: string): Promise
     return;
   }
 
-  // Determine recipient email — use account email if available
-  const recipientEmail = snapshot.accountCode
-    ? (await getRecipientEmail(snapshot.accountCode))
-    : null;
+  // Determine recipient email
+  const recipient = await resolveRecipientEmail(snapshot.accountCode ?? null);
+  const recipientEmail = recipient.email;
 
   if (!recipientEmail) {
-    await markQueueItemFailed(item.id, "no recipient email found for account");
+    await markQueueItemFailed(item.id, "no recipient email found for account (and no fallback configured)");
     await createCommsAuditEntry({
       externalJobId: item.externalJobId,
       queueItemId: item.id,
@@ -142,7 +142,10 @@ async function processQueueItem(item: CommsQueueItem, workerId: string): Promise
       queuedAt: item.createdAt,
       sentAt: null,
       completedAt: new Date(),
-      metadata: null,
+      metadata: JSON.stringify({
+        accountCode: snapshot.accountCode,
+        recipientSource: recipient.source,
+      }),
     });
     return;
   }
@@ -219,7 +222,7 @@ async function processQueueItem(item: CommsQueueItem, workerId: string): Promise
     queuedAt: item.createdAt,
     sentAt,
     completedAt: new Date(),
-    metadata: JSON.stringify({ routeKey: rendered.routeKey, demoMode: COMMS_DEMO_MODE }),
+    metadata: JSON.stringify({ routeKey: rendered.routeKey, demoMode: COMMS_DEMO_MODE, recipientSource: recipient.source }),
   });
 
   // Reset cooldown timer
@@ -254,6 +257,24 @@ async function getRecipientEmail(accountCode: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+async function resolveRecipientEmail(accountCode: string | null): Promise<{ email: string | null; source: "account" | "fallback" | "none" }> {
+  if (accountCode) {
+    const accountEmail = await getRecipientEmail(accountCode);
+    if (accountEmail) return { email: accountEmail, source: "account" };
+  }
+
+  // In demo mode, allow sending to demo recipient even without account emails.
+  if (COMMS_DEMO_MODE && COMMS_DEMO_RECIPIENT) {
+    return { email: COMMS_DEMO_RECIPIENT, source: "fallback" };
+  }
+
+  if (COMMS_FALLBACK_RECIPIENT) {
+    return { email: COMMS_FALLBACK_RECIPIENT, source: "fallback" };
+  }
+
+  return { email: null, source: "none" };
 }
 
 async function releaseStaleLeases(): Promise<void> {
