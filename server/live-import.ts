@@ -279,10 +279,12 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
   const seenJobIds = new Set<string>();
   const errors: { row: number; message: string }[] = [];
   const jobsToInsert: Parameters<typeof storage.createJob>[0][] = [];
-  const accountsToCreate = new Map<string, { code: string; name: string }>();
+  const accountsToCreate = new Map<string, { code: string; name: string; email: string | null }>();
+  const accountEmailUpdates = new Map<string, string>();
 
   const existingAccounts = await storage.getAllCustomerAccounts();
   const existingAccountCodes = new Set(existingAccounts.map((a) => a.accountCode));
+  const existingAccountByCode = new Map(existingAccounts.map((a) => [a.accountCode, a]));
 
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
@@ -292,6 +294,16 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
       const jobId = getCol(row, "JobID", "job_id", "JobId");
       const accountCode = getCol(row, "Account Code", "account_code", "AccountCode", "Customer Alpha Code");
       const accountName = getCol(row, "Account Name", "account_name", "AccountName");
+      const rawContactEmail = getCol(
+        row,
+        "Contact Email",
+        "contact_email",
+        "ContactEmail",
+        "Customer Email",
+        "customer_email",
+        "Approver Email",
+        "approver_email",
+      );
       const siteName = getCol(row, "Site Name", "site_name", "SiteName");
       const portalStatus = getCol(row, "Portal Status", "portal_status");
       const internalStatus = getCol(row, "Status", "status");
@@ -322,11 +334,30 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
 
       const accountCodeStr = String(accountCode).trim();
       const accountNameStr = accountName ? String(accountName).trim() : accountCodeStr;
+      const contactEmailStr = rawContactEmail ? String(rawContactEmail).trim().toLowerCase() : null;
+      const contactEmail =
+        contactEmailStr && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmailStr)
+          ? contactEmailStr
+          : null;
       const jobTypeStr = jobType ? String(jobType).trim() : null;
       const displayStatusStr = displayStatus ? String(displayStatus).trim() : "Unknown";
 
       if (!existingAccountCodes.has(accountCodeStr) && !accountsToCreate.has(accountCodeStr)) {
-        accountsToCreate.set(accountCodeStr, { code: accountCodeStr, name: accountNameStr });
+        accountsToCreate.set(accountCodeStr, { code: accountCodeStr, name: accountNameStr, email: contactEmail });
+      } else if (!existingAccountCodes.has(accountCodeStr) && accountsToCreate.has(accountCodeStr) && contactEmail) {
+        // Prefer the first valid email we see for newly created accounts.
+        const existing = accountsToCreate.get(accountCodeStr)!;
+        if (!existing.email) {
+          accountsToCreate.set(accountCodeStr, { ...existing, email: contactEmail });
+        }
+      }
+
+      // For existing accounts, auto-fill missing emails from live source data.
+      if (existingAccountCodes.has(accountCodeStr) && contactEmail) {
+        const existing = existingAccountByCode.get(accountCodeStr);
+        if (existing && !existing.email) {
+          accountEmailUpdates.set(accountCodeStr, contactEmail);
+        }
       }
 
       let shortDescription = jobTypeStr || "No description";
@@ -375,6 +406,7 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
       await storage.createCustomerAccount({
         accountCode: code,
         accountName: account.name,
+        email: account.email,
         passwordHash: hashedPassword,
       });
       // Audit so the temp password is recoverable post-hoc only via the audit log
@@ -389,6 +421,14 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
         userAgent: null,
         payload: JSON.stringify({ accountName: account.name, mustChangePassword: true }),
       }).catch(() => undefined);
+    }
+  }
+
+  // Backfill emails for pre-existing accounts if live source now provides them.
+  if (accountEmailUpdates.size > 0) {
+    const updates = Array.from(accountEmailUpdates.entries());
+    for (const [code, email] of updates) {
+      await storage.updateCustomerAccountEmail(code, email);
     }
   }
 
