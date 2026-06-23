@@ -21,6 +21,8 @@ import {
   seedTemplatesIfEmpty,
   getTemplate,
   isCommsManualMode,
+  getCommsJobTypeAllowlist,
+  jobTypeMatchesAllowlist,
 } from "./comms-storage";
 import { renderCommsForJob } from "./render-engine";
 import type { CommsQueueItem } from "@shared/schema";
@@ -270,16 +272,18 @@ async function releaseStaleLeases(): Promise<void> {
     );
 }
 
-export async function runCommsWorkerBatch(): Promise<{ batchId: string; processed: number; sent: number; failed: number; suppressed: number; skippedManualMode: number }> {
+export async function runCommsWorkerBatch(): Promise<{ batchId: string; processed: number; sent: number; failed: number; suppressed: number; skippedManualMode: number; skippedAllowlist: number }> {
   const batchId = crypto.randomUUID();
   const workerId = `worker-${batchId}`;
   const items = await getDueQueueItems(BATCH_SIZE);
   const manualMode = await isCommsManualMode();
+  const allowlist = await getCommsJobTypeAllowlist();
 
   let sent = 0;
   let failed = 0;
   let suppressed = 0;
   let skippedManualMode = 0;
+  let skippedAllowlist = 0;
 
   for (const item of items) {
     // In manual mode, only process items that were explicitly triggered by an operator
@@ -287,6 +291,16 @@ export async function runCommsWorkerBatch(): Promise<{ batchId: string; processe
       skippedManualMode++;
       log(`Manual mode — skipping auto item ${item.id} (${item.externalJobId})`, "comms-worker");
       continue;
+    }
+
+    // Job-type allowlist: skip auto sends for jobs whose type doesn't match
+    if (allowlist.length > 0 && item.triggerType !== "manual") {
+      const snap = await getCommsSnapshot(item.externalJobId);
+      if (!jobTypeMatchesAllowlist(snap?.jobType, allowlist)) {
+        skippedAllowlist++;
+        log(`Allowlist — skipping item ${item.id} (${item.externalJobId}, type=${snap?.jobType ?? "null"})`, "comms-worker");
+        continue;
+      }
     }
 
     try {
@@ -311,20 +325,21 @@ export async function runCommsWorkerBatch(): Promise<{ batchId: string; processe
   }
 
   log(
-    `Comms worker batch ${batchId} — ${items.length} items: ${sent} sent, ${failed} failed, ${suppressed} suppressed${manualMode ? `, ${skippedManualMode} skipped (manual mode)` : ""}`,
+    `Comms worker batch ${batchId} — ${items.length} items: ${sent} sent, ${failed} failed, ${suppressed} suppressed${manualMode ? `, ${skippedManualMode} skipped (manual mode)` : ""}${skippedAllowlist > 0 ? `, ${skippedAllowlist} skipped (allowlist)` : ""}`,
     "comms-worker",
   );
 
-  return { batchId, processed: items.length, sent, failed, suppressed, skippedManualMode };
+  return { batchId, processed: items.length, sent, failed, suppressed, skippedManualMode, skippedAllowlist };
 }
 
 export async function runCommsWorkerForJob(
   externalJobId: string,
   opts: { manualOnly?: boolean } = {},
-): Promise<{ batchId: string; processed: number; sent: number; failed: number; suppressed: number; skippedManualMode: number }> {
+): Promise<{ batchId: string; processed: number; sent: number; failed: number; suppressed: number; skippedManualMode: number; skippedAllowlist: number }> {
   const batchId = crypto.randomUUID();
   const workerId = `worker-${batchId}`;
   const manualMode = await isCommsManualMode();
+  const allowlist = await getCommsJobTypeAllowlist();
 
   await releaseStaleLeases().catch(() => null);
 
@@ -355,11 +370,21 @@ export async function runCommsWorkerForJob(
   let failed = 0;
   let suppressed = 0;
   let skippedManualMode = 0;
+  let skippedAllowlist = 0;
 
   for (const item of items) {
     if (manualMode && item.triggerType !== "manual") {
       skippedManualMode++;
       continue;
+    }
+
+    // Job-type allowlist: skip auto sends for jobs whose type doesn't match
+    if (allowlist.length > 0 && item.triggerType !== "manual") {
+      const snap = await getCommsSnapshot(item.externalJobId);
+      if (!jobTypeMatchesAllowlist(snap?.jobType, allowlist)) {
+        skippedAllowlist++;
+        continue;
+      }
     }
 
     try {
@@ -381,11 +406,11 @@ export async function runCommsWorkerForJob(
   }
 
   log(
-    `Comms worker job batch ${batchId} (${externalJobId}) — ${items.length} items: ${sent} sent, ${failed} failed, ${suppressed} suppressed${manualMode ? `, ${skippedManualMode} skipped (manual mode)` : ""}`,
+    `Comms worker job batch ${batchId} (${externalJobId}) — ${items.length} items: ${sent} sent, ${failed} failed, ${suppressed} suppressed${manualMode ? `, ${skippedManualMode} skipped (manual mode)` : ""}${skippedAllowlist > 0 ? `, ${skippedAllowlist} skipped (allowlist)` : ""}`,
     "comms-worker",
   );
 
-  return { batchId, processed: items.length, sent, failed, suppressed, skippedManualMode };
+  return { batchId, processed: items.length, sent, failed, suppressed, skippedManualMode, skippedAllowlist };
 }
 
 export function startCommsQueueWorker(): void {

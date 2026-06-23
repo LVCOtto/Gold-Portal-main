@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/comms/jobs", label: "Job Board", icon: Briefcase },
-  { href: "/comms/queue", label: "Queue Monitor", icon: LayoutList },
   { href: "/comms/templates", label: "Templates", icon: FileText },
   { href: "/comms/audit", label: "Audit Log", icon: ClipboardList },
 ];

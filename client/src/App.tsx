@@ -24,7 +24,6 @@ import ChangePasswordPage from "@/pages/change-password";
 import CommsLoginPage from "@/pages/comms/login";
 import CommsJobsPage from "@/pages/comms/jobs";
 import CommsJobDetailPage from "@/pages/comms/job-detail";
-import CommsQueuePage from "@/pages/comms/queue";
 import CommsTemplatesPage from "@/pages/comms/templates";
 import CommsAuditPage from "@/pages/comms/audit";
 import { Loader2 } from "lucide-react";
@@ -235,7 +234,7 @@ function Router() {
       </Route>
       <Route path="/comms/queue">
         <CommsRoute>
-          <CommsQueuePage />
+          <CommsJobsPage />
         </CommsRoute>
       </Route>
       <Route path="/comms/templates">

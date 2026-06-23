@@ -1,4 +1,7 @@
-import { useState, useEffect } from "react";
+const fs = require("fs");
+const path = require("path");
+
+const content = `import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Search, RefreshCw, PauseCircle, PlayCircle, Zap, StickyNote, AlertCircle,
@@ -64,7 +67,7 @@ function CommsBadge({ status }: { status: string }) {
     completed: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${variants[status] ?? variants.active}`}>
+    <span className={\`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium \${variants[status] ?? variants.active}\`}>
       {status.replace(/_/g, " ")}
     </span>
   );
@@ -77,7 +80,7 @@ function DueBadge({ dueAt }: { dueAt: string | null }) {
   const isOverdue = isPast(date);
   const isDueSoon = !isOverdue && isWithinInterval(date, { start: now, end: addDays(now, 7) });
   return (
-    <span className={`text-xs font-medium ${isOverdue ? "text-red-600 dark:text-red-400" : isDueSoon ? "text-yellow-600 dark:text-yellow-400" : "text-muted-foreground"}`}>
+    <span className={\`text-xs font-medium \${isOverdue ? "text-red-600 dark:text-red-400" : isDueSoon ? "text-yellow-600 dark:text-yellow-400" : "text-muted-foreground"}\`}>
       {format(date, "dd/MM/yyyy")}
     </span>
   );
@@ -93,9 +96,9 @@ function LastActionBadge({ action }: { action: JobEntry["lastAction"] }) {
   const stamp = action.sentAt ?? action.completedAt;
   return (
     <div className="space-y-0.5">
-      <div className={`text-xs font-medium ${colorClass}`}>{action.outcome}</div>
+      <div className={\`text-xs font-medium \${colorClass}\`}>{action.outcome}</div>
       <div className="text-[11px] text-muted-foreground">
-        {action.triggerType}{stamp ? ` · ${format(new Date(stamp), "dd/MM HH:mm")}` : ""}
+        {action.triggerType}{stamp ? \` · \${format(new Date(stamp), "dd/MM HH:mm")}\` : ""}
       </div>
       {action.outcome === "failed" && action.errorMessage && (
         <div className="text-[10px] text-red-600 dark:text-red-400 truncate max-w-[170px]" title={action.errorMessage}>
@@ -109,7 +112,7 @@ function LastActionBadge({ action }: { action: JobEntry["lastAction"] }) {
 function StatPill({ label, value, color }: { label: string; value: number | undefined; color?: string }) {
   return (
     <div className="flex items-center gap-2 rounded-md border bg-card px-3 py-2">
-      <span className={`text-xl font-bold ${color ?? "text-foreground"}`}>{value ?? "—"}</span>
+      <span className={\`text-xl font-bold \${color ?? "text-foreground"}\`}>{value ?? "—"}</span>
       <span className="text-xs text-muted-foreground leading-tight">{label}</span>
     </div>
   );
@@ -220,7 +223,7 @@ export default function CommsJobsPage() {
       if (search) params.set("search", search);
       if (jobTypeContains) params.set("jobTypeContains", jobTypeContains);
       if (commsStatusFilter !== "all") params.set("commsStatus", commsStatusFilter);
-      const res = await fetch(`/api/comms/jobs?${params}`, { credentials: "include" });
+      const res = await fetch(\`/api/comms/jobs?\${params}\`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load jobs");
       return res.json() as Promise<{ jobs: JobEntry[]; total: number }>;
     },
@@ -250,7 +253,7 @@ export default function CommsJobsPage() {
       const d = await res.json();
       toast({
         title: "Worker run complete",
-        description: `${d.processed} processed — ${d.sent} sent, ${d.failed} failed${d.skippedAllowlist ? `, ${d.skippedAllowlist} skipped (allowlist)` : ""}`,
+        description: \`\${d.processed} processed — \${d.sent} sent, \${d.failed} failed\${d.skippedAllowlist ? \`, \${d.skippedAllowlist} skipped (allowlist)\` : ""}\`,
       });
       qc.invalidateQueries({ queryKey: ["/api/comms/queue"] });
       qc.invalidateQueries({ queryKey: ["/api/comms/jobs"] });
@@ -260,7 +263,7 @@ export default function CommsJobsPage() {
 
   const triggerMutation = useMutation({
     mutationFn: async (jobId: string) => {
-      const res = await apiRequest("POST", `/api/comms/jobs/${jobId}/trigger-update?runNow=1`);
+      const res = await apiRequest("POST", \`/api/comms/jobs/\${jobId}/trigger-update?runNow=1\`);
       return res.json() as Promise<{
         queued: boolean;
         queueItemId: string;
@@ -287,19 +290,19 @@ export default function CommsJobsPage() {
   });
 
   const suppressMutation = useMutation({
-    mutationFn: (jobId: string) => apiRequest("POST", `/api/comms/jobs/${jobId}/suppress`),
+    mutationFn: (jobId: string) => apiRequest("POST", \`/api/comms/jobs/\${jobId}/suppress\`),
     onSuccess: () => { toast({ title: "Job suppressed" }); qc.invalidateQueries({ queryKey: ["/api/comms/jobs"] }); },
     onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed", variant: "destructive" }),
   });
 
   const resumeMutation = useMutation({
-    mutationFn: (jobId: string) => apiRequest("POST", `/api/comms/jobs/${jobId}/resume`),
+    mutationFn: (jobId: string) => apiRequest("POST", \`/api/comms/jobs/\${jobId}/resume\`),
     onSuccess: () => { toast({ title: "Job resumed" }); qc.invalidateQueries({ queryKey: ["/api/comms/jobs"] }); },
     onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed", variant: "destructive" }),
   });
 
   const retryMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/comms/queue/retry/${id}`),
+    mutationFn: (id: string) => apiRequest("POST", \`/api/comms/queue/retry/\${id}\`),
     onSuccess: () => { toast({ title: "Item re-queued" }); qc.invalidateQueries({ queryKey: ["/api/comms/queue"] }); },
     onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed", variant: "destructive" }),
   });
@@ -476,7 +479,7 @@ export default function CommsJobsPage() {
                 ) : jobs.map((job) => (
                   <tr key={job.externalJobId} className="border-b last:border-b-0 hover:bg-muted/30 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs">
-                      <Link href={`/comms/jobs/${job.externalJobId}`} className="text-primary hover:underline font-medium">
+                      <Link href={\`/comms/jobs/\${job.externalJobId}\`} className="text-primary hover:underline font-medium">
                         {job.externalJobId}
                       </Link>
                       {job.state?.escalationFlag && <span className="ml-1 text-red-500 font-bold">⚠</span>}
@@ -511,7 +514,7 @@ export default function CommsJobsPage() {
                             <PauseCircle className="h-3.5 w-3.5 text-yellow-600" />
                           </Button>
                         )}
-                        <Link href={`/comms/jobs/${job.externalJobId}`}>
+                        <Link href={\`/comms/jobs/\${job.externalJobId}\`}>
                           <Button size="icon" variant="ghost" className="h-7 w-7" title="View details">
                             <StickyNote className="h-3.5 w-3.5" />
                           </Button>
@@ -549,7 +552,7 @@ export default function CommsJobsPage() {
                 {failedItems?.map((item) => (
                   <div key={item.id} className="flex items-start justify-between gap-3 px-4 py-3 bg-card">
                     <div className="min-w-0">
-                      <Link href={`/comms/jobs/${item.externalJobId}`} className="text-sm font-mono text-primary hover:underline">
+                      <Link href={\`/comms/jobs/\${item.externalJobId}\`} className="text-sm font-mono text-primary hover:underline">
                         {item.externalJobId}
                       </Link>
                       {item.lastError && (
@@ -579,3 +582,7 @@ export default function CommsJobsPage() {
     </CommsLayout>
   );
 }
+`;
+
+fs.writeFileSync(path.join(__dirname, "../client/src/pages/comms/jobs.tsx"), content, "utf8");
+console.log("Written jobs.tsx");

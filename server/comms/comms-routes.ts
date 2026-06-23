@@ -29,6 +29,8 @@ import {
   listCommsAudit,
   isCommsManualMode,
   setCommsManualMode,
+  getCommsJobTypeAllowlist,
+  setCommsJobTypeAllowlist,
 } from "./comms-storage";
 import { db } from "../db";
 import { commsQueue, commsJobStates, commsJobSnapshots, commsAuditLog } from "@shared/schema";
@@ -573,6 +575,31 @@ router.post("/settings/manual-mode", async (req, res, next) => {
     }
     await setCommsManualMode(enabled);
     return res.json({ manualMode: enabled });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/comms/settings/job-type-allowlist
+router.get("/settings/job-type-allowlist", async (_req, res, next) => {
+  try {
+    const allowlist = await getCommsJobTypeAllowlist();
+    return res.json({ allowlist });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/comms/settings/job-type-allowlist
+const allowlistSchema = z.object({
+  allowlist: z.array(z.string().min(1).max(100)).max(50),
+});
+router.post("/settings/job-type-allowlist", async (req, res, next) => {
+  try {
+    const parsed = allowlistSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    await setCommsJobTypeAllowlist(parsed.data.allowlist);
+    return res.json({ allowlist: parsed.data.allowlist });
   } catch (err) {
     next(err);
   }

@@ -430,6 +430,7 @@ export async function listCommsAudit(filters: {
 // ── Manual Mode ────────────────────────────────────────────────────────────
 
 const COMMS_MANUAL_MODE_KEY = "comms_manual_mode";
+const COMMS_JOB_TYPE_ALLOWLIST_KEY = "comms_job_type_allowlist";
 
 export async function isCommsManualMode(): Promise<boolean> {
   const [row] = await db.select().from(systemSettings).where(eq(systemSettings.key, COMMS_MANUAL_MODE_KEY));
@@ -446,6 +447,37 @@ export async function setCommsManualMode(enabled: boolean): Promise<void> {
       target: systemSettings.key,
       set: { value: enabled ? "true" : "false", updatedAt: new Date() },
     });
+}
+
+/** Returns the job-type allowlist phrases. Empty array = all job types allowed. */
+export async function getCommsJobTypeAllowlist(): Promise<string[]> {
+  const [row] = await db.select().from(systemSettings).where(eq(systemSettings.key, COMMS_JOB_TYPE_ALLOWLIST_KEY));
+  if (!row || !row.value) return [];
+  try {
+    const parsed = JSON.parse(row.value);
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string" && s.trim().length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function setCommsJobTypeAllowlist(phrases: string[]): Promise<void> {
+  const value = JSON.stringify(phrases.map((p) => p.trim()).filter(Boolean));
+  await db
+    .insert(systemSettings)
+    .values({ key: COMMS_JOB_TYPE_ALLOWLIST_KEY, value, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value, updatedAt: new Date() },
+    });
+}
+
+/** Check if a job type matches the allowlist. Returns true if allowed. */
+export function jobTypeMatchesAllowlist(jobType: string | null | undefined, allowlist: string[]): boolean {
+  if (allowlist.length === 0) return true; // empty = all allowed
+  if (!jobType) return false;
+  const lc = jobType.toLowerCase();
+  return allowlist.some((phrase) => lc.includes(phrase.toLowerCase()));
 }
 
 // ── Seed Templates ─────────────────────────────────────────────────────────
