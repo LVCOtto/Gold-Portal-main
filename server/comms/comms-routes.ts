@@ -211,18 +211,21 @@ router.post("/jobs/:jobId/trigger-update", async (req, res, next) => {
     const runNow = req.query.runNow !== "0";
     await getOrCreateCommsState(req.params.jobId);
 
-    // Prevent duplicate pending queue items for the same job
+    // Prevent duplicate pending MANUAL queue items for the same job.
+    // If only scheduled due items exist, we still enqueue a manual one.
     const existingDue = await db
-      .select({ id: commsQueue.id })
+      .select({ id: commsQueue.id, triggerType: commsQueue.triggerType })
       .from(commsQueue)
       .where(and(eq(commsQueue.externalJobId, req.params.jobId), eq(commsQueue.state, "due")))
-      .limit(1);
+      .limit(20);
 
-    if (existingDue.length > 0) {
+    const existingManualDue = existingDue.find((q) => q.triggerType === "manual");
+
+    if (existingManualDue) {
       const worker = runNow
         ? await runCommsWorkerForJob(req.params.jobId, { manualOnly: true })
         : null;
-      return res.json({ queued: true, queueItemId: existingDue[0].id, note: "already queued", worker });
+      return res.json({ queued: true, queueItemId: existingManualDue.id, note: "already queued", worker });
     }
 
     const queueItem = await enqueueCommsJob(req.params.jobId, {
