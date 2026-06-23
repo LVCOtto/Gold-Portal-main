@@ -294,8 +294,11 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
       const jobId = getCol(row, "JobID", "job_id", "JobId");
       const accountCode = getCol(row, "Account Code", "account_code", "AccountCode", "Customer Alpha Code");
       const accountName = getCol(row, "Account Name", "account_name", "AccountName");
+      // Try to get contact email from live source first (primary source)
       const rawContactEmail = getCol(
         row,
+        "Customer Contact Email",
+        "customer_contact_email",
         "Contact Email",
         "contact_email",
         "ContactEmail",
