@@ -44,7 +44,7 @@ function NavLinks({ mobile = false, onNavigate }: { mobile?: boolean; onNavigate
               "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
               isActive
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-muted-foreground hover:text-foreground hover-elevate"
+                : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground hover-elevate"
             )}
             data-testid={`link-admin-${item.label.toLowerCase()}`}
           >
@@ -94,7 +94,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           <div className="p-3 border-t">
             <Button 
               variant="ghost" 
-              className="w-full justify-start gap-3 text-muted-foreground"
+              className="w-full justify-start gap-3 text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
               onClick={logout}
               data-testid="button-admin-logout"
             >
