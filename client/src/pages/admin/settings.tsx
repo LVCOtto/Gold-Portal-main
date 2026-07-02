@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2, ShieldAlert } from "lucide-react";
+import { Loader2, MessageSquare, ShieldAlert, Wrench } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminLayout } from "@/components/admin-layout";
 import { Switch } from "@/components/ui/switch";
@@ -16,13 +16,56 @@ type CommunicationSettings = {
   workshopTeamEmail: string;
 };
 
+type InternalAccessUser = {
+  id: string;
+  email: string;
+  displayName: string | null;
+  canWorkshop: boolean;
+  canComms: boolean;
+  isActive: boolean;
+  lastLoginAt: string | null;
+};
+
+type NewInternalAccessUser = {
+  email: string;
+  displayName: string;
+  canWorkshop: boolean;
+  canComms: boolean;
+  isActive: boolean;
+};
+
+function formatLastLogin(value: string | null) {
+  if (!value) return "Never";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Never";
+  return parsed.toLocaleString();
+}
+
 export default function AdminSettingsPage() {
   const { toast } = useToast();
   const { data: communicationSettings, isLoading } = useQuery<CommunicationSettings>({
     queryKey: ["/api/admin/settings/communications"],
   });
+  const { data: internalAccessData, isLoading: isInternalAccessLoading } = useQuery<{ users: InternalAccessUser[] }>({
+    queryKey: ["/api/admin/settings/internal-access"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/settings/internal-access", { credentials: "include" });
+      if (!response.ok) {
+        throw new Error("Failed to load internal access settings");
+      }
+      return response.json();
+    },
+  });
   const [otpEmailSandboxEnabled, setOtpEmailSandboxEnabled] = useState(false);
   const [workshopTeamEmail, setWorkshopTeamEmail] = useState("");
+  const [internalAccessDrafts, setInternalAccessDrafts] = useState<InternalAccessUser[]>([]);
+  const [newInternalAccessUser, setNewInternalAccessUser] = useState<NewInternalAccessUser>({
+    email: "",
+    displayName: "",
+    canWorkshop: true,
+    canComms: false,
+    isActive: true,
+  });
 
   useEffect(() => {
     if (!communicationSettings) {
@@ -31,6 +74,10 @@ export default function AdminSettingsPage() {
     setOtpEmailSandboxEnabled(!!communicationSettings.otpEmailSandboxEnabled);
     setWorkshopTeamEmail(communicationSettings.workshopTeamEmail || "");
   }, [communicationSettings]);
+
+  useEffect(() => {
+    setInternalAccessDrafts(internalAccessData?.users || []);
+  }, [internalAccessData]);
 
   const mutation = useMutation({
     mutationFn: async (settings: { otpEmailSandboxEnabled: boolean; workshopTeamEmail: string }) => {
@@ -49,6 +96,52 @@ export default function AdminSettingsPage() {
       });
     },
   });
+
+  const createInternalAccessMutation = useMutation({
+    mutationFn: async (payload: NewInternalAccessUser) => {
+      const response = await apiRequest("POST", "/api/admin/settings/internal-access", payload);
+      return response.json() as Promise<{ user: InternalAccessUser }>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/internal-access"] });
+      setNewInternalAccessUser({ email: "", displayName: "", canWorkshop: true, canComms: false, isActive: true });
+      toast({ title: "Internal access saved", description: "The internal user has been added or updated." });
+    },
+    onError: (error) => {
+      toast({
+        title: "Internal access not saved",
+        description: error instanceof Error ? error.message : "Unable to save internal access",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateInternalAccessMutation = useMutation({
+    mutationFn: async (payload: InternalAccessUser) => {
+      const response = await apiRequest("PATCH", `/api/admin/settings/internal-access/${payload.id}`, {
+        displayName: payload.displayName || "",
+        canWorkshop: payload.canWorkshop,
+        canComms: payload.canComms,
+        isActive: payload.isActive,
+      });
+      return response.json() as Promise<{ user: InternalAccessUser }>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/internal-access"] });
+      toast({ title: "Internal access updated", description: "Permissions have been saved." });
+    },
+    onError: (error) => {
+      toast({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : "Unable to update internal access",
+        variant: "destructive",
+      });
+    },
+  });
+
+  function updateDraft(id: string, patch: Partial<InternalAccessUser>) {
+    setInternalAccessDrafts((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
 
   const sandboxRecipient = communicationSettings?.otpEmailSandboxRecipient || "otto@lvcuk.com";
   const workshopLoginUrl = typeof window !== "undefined" ? `${window.location.origin}/workshop/login` : "/workshop/login";
@@ -109,9 +202,9 @@ export default function AdminSettingsPage() {
               )}
             </div>
             <div className="space-y-2 rounded-md border p-4">
-              <Label htmlFor="workshop-team-email" className="font-medium">Workshop login email</Label>
+              <Label htmlFor="workshop-team-email" className="font-medium">Legacy workshop fallback email</Label>
               <p className="text-xs text-muted-foreground">
-                The workshop team will receive their one-time login codes at this address and only be able to access the workshop T-card system.
+                This fallback address still works during migration, but new Workshop and Comms access should be managed in the internal access list below.
               </p>
               <Input
                 id="workshop-team-email"
@@ -146,6 +239,170 @@ export default function AdminSettingsPage() {
               {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Save Communication Settings
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base font-medium">Internal Access</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6 text-sm">
+            <div className="rounded-md border p-4 space-y-4">
+              <div className="space-y-1">
+                <p className="font-medium text-foreground">Add internal user</p>
+                <p className="text-xs text-muted-foreground">
+                  Grant one-time-code access to the Workshop portal, the Comms portal, or both. These users do not get customer portal access.
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="internal-access-email">Email address</Label>
+                  <Input
+                    id="internal-access-email"
+                    type="email"
+                    value={newInternalAccessUser.email}
+                    onChange={(event) => setNewInternalAccessUser((current) => ({ ...current, email: event.target.value }))}
+                    placeholder="name@company.com"
+                    data-testid="input-internal-access-email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="internal-access-display-name">Display name</Label>
+                  <Input
+                    id="internal-access-display-name"
+                    value={newInternalAccessUser.displayName}
+                    onChange={(event) => setNewInternalAccessUser((current) => ({ ...current, displayName: event.target.value }))}
+                    placeholder="Optional"
+                    data-testid="input-internal-access-display-name"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-8">
+                <div className="flex items-center justify-between gap-4 md:min-w-52">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="new-internal-workshop">Workshop</Label>
+                  </div>
+                  <Switch
+                    id="new-internal-workshop"
+                    checked={newInternalAccessUser.canWorkshop}
+                    onCheckedChange={(checked) => setNewInternalAccessUser((current) => ({ ...current, canWorkshop: checked }))}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4 md:min-w-52">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="new-internal-comms">Comms</Label>
+                  </div>
+                  <Switch
+                    id="new-internal-comms"
+                    checked={newInternalAccessUser.canComms}
+                    onCheckedChange={(checked) => setNewInternalAccessUser((current) => ({ ...current, canComms: checked }))}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4 md:min-w-44">
+                  <Label htmlFor="new-internal-active">Active</Label>
+                  <Switch
+                    id="new-internal-active"
+                    checked={newInternalAccessUser.isActive}
+                    onCheckedChange={(checked) => setNewInternalAccessUser((current) => ({ ...current, isActive: checked }))}
+                  />
+                </div>
+              </div>
+              <Button
+                type="button"
+                disabled={createInternalAccessMutation.isPending}
+                onClick={() => createInternalAccessMutation.mutate(newInternalAccessUser)}
+                data-testid="button-add-internal-access"
+              >
+                {createInternalAccessMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save Internal User
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <p className="font-medium text-foreground">Current internal users</p>
+                <p className="text-xs text-muted-foreground">
+                  Workshop sign-in: {workshopLoginUrl}. Comms sign-in: /comms/login.
+                </p>
+              </div>
+
+              {isInternalAccessLoading ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading internal users...
+                </div>
+              ) : internalAccessDrafts.length === 0 ? (
+                <div className="rounded-md border border-dashed p-4 text-muted-foreground">
+                  No internal users have been configured yet.
+                </div>
+              ) : (
+                internalAccessDrafts.map((user) => (
+                  <div key={user.id} className="rounded-md border p-4 space-y-4">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="font-medium text-foreground">{user.email}</p>
+                        <p className="text-xs text-muted-foreground">Last login: {formatLastLogin(user.lastLoginAt)}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={updateInternalAccessMutation.isPending}
+                        onClick={() => updateInternalAccessMutation.mutate(user)}
+                        data-testid={`button-save-internal-access-${user.id}`}
+                      >
+                        {updateInternalAccessMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Save
+                      </Button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor={`display-name-${user.id}`}>Display name</Label>
+                      <Input
+                        id={`display-name-${user.id}`}
+                        value={user.displayName || ""}
+                        onChange={(event) => updateDraft(user.id, { displayName: event.target.value })}
+                        placeholder="Optional"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-8">
+                      <div className="flex items-center justify-between gap-4 md:min-w-52">
+                        <div className="flex items-center gap-2">
+                          <Wrench className="h-4 w-4 text-muted-foreground" />
+                          <Label htmlFor={`workshop-${user.id}`}>Workshop</Label>
+                        </div>
+                        <Switch
+                          id={`workshop-${user.id}`}
+                          checked={user.canWorkshop}
+                          onCheckedChange={(checked) => updateDraft(user.id, { canWorkshop: checked })}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-4 md:min-w-52">
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                          <Label htmlFor={`comms-${user.id}`}>Comms</Label>
+                        </div>
+                        <Switch
+                          id={`comms-${user.id}`}
+                          checked={user.canComms}
+                          onCheckedChange={(checked) => updateDraft(user.id, { canComms: checked })}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-4 md:min-w-44">
+                        <Label htmlFor={`active-${user.id}`}>Active</Label>
+                        <Switch
+                          id={`active-${user.id}`}
+                          checked={user.isActive}
+                          onCheckedChange={(checked) => updateDraft(user.id, { isActive: checked })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

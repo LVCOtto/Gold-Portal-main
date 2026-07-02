@@ -18,7 +18,7 @@ interface AuthContextType {
   verifyCustomerOtp: (code: string) => Promise<void>;
   requestAdminOtp: () => Promise<void>;
   verifyAdminOtp: (code: string) => Promise<void>;
-  requestWorkshopOtp: () => Promise<void>;
+  requestWorkshopOtp: (email: string) => Promise<void>;
   verifyWorkshopOtp: (code: string) => Promise<void>;
   logout: () => Promise<void>;
   clearMustChangePassword: () => void;
@@ -89,8 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLocation("/admin");
   }
 
-  async function requestWorkshopOtp() {
-    await apiRequest("POST", "/api/auth/workshop/request-otp");
+  async function requestWorkshopOtp(email: string) {
+    await apiRequest("POST", "/api/auth/workshop/request-otp", { email });
   }
 
   async function verifyWorkshopOtp(code: string) {

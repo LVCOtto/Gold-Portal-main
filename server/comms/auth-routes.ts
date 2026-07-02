@@ -1,5 +1,7 @@
 import type { Router, Request } from "express";
 import crypto from "crypto";
+import { storage } from "../storage";
+import { hasInternalAccess, normalizeInternalEmail, resolveInternalAccess } from "../internal-access";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const COMMS_OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -9,20 +11,6 @@ const COMMS_LOCKOUT_MS = 15 * 60 * 1000;
 const commsOtpLockout = new Map<string, { count: number; lockedUntil: number }>();
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function getAllowedEmails(): string[] {
-  const raw = process.env.COMMS_ALLOWED_EMAILS || process.env.ADMIN_EMAIL || "";
-  return raw
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-}
-
-function isEmailAllowed(email: string): boolean {
-  const allowed = getAllowedEmails();
-  if (allowed.length === 0) return false;
-  return allowed.includes(email.trim().toLowerCase());
-}
 
 function isLockedOut(email: string): number {
   const entry = commsOtpLockout.get(email);
@@ -108,9 +96,10 @@ export function registerCommsAuthRoutes(router: Router) {
       if (!email || typeof email !== "string") {
         return res.status(400).json({ error: "email is required" });
       }
-      const normalised = email.trim().toLowerCase();
+      const normalised = normalizeInternalEmail(email);
+      const access = await resolveInternalAccess(normalised);
 
-      if (!isEmailAllowed(normalised)) {
+      if (!hasInternalAccess(access, "comms")) {
         // Return same response as success — don't reveal which emails are allowed
         return res.json({ sent: true });
       }
@@ -180,10 +169,18 @@ export function registerCommsAuthRoutes(router: Router) {
         return res.status(401).json({ error: "Invalid code" });
       }
 
+      const access = await resolveInternalAccess(pending.email);
+      if (!hasInternalAccess(access, "comms")) {
+        delete req.session.commsOtp;
+        await saveSession(req);
+        return res.status(403).json({ error: "This email address is no longer allowed to access the comms portal" });
+      }
+
       clearFailures(pending.email);
       delete req.session.commsOtp;
       req.session.commsOperator = { email: pending.email, loginAt: new Date().toISOString() };
       await saveSession(req);
+      await storage.updateInternalAccessLastLogin(pending.email).catch(() => undefined);
 
       return res.json({ operator: { email: pending.email } });
     } catch (err) {

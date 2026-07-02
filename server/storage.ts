@@ -1,5 +1,5 @@
 import { 
-  customerAccounts, jobs, quotes, purchaseOrders, importBatches, approvalEvents, systemSettings, jobOverrides, auditEvents, workshopBoardCards, workshopBoardEvents,
+  customerAccounts, jobs, quotes, purchaseOrders, importBatches, approvalEvents, systemSettings, jobOverrides, auditEvents, workshopBoardCards, workshopBoardEvents, internalAccessUsers,
   type CustomerAccount, type InsertCustomerAccount,
   type Job, type InsertJob,
   type Quote, type InsertQuote,
@@ -9,6 +9,7 @@ import {
   type JobOverride, type InsertJobOverride,
   type WorkshopBoardCard, type InsertWorkshopBoardCard,
   type WorkshopBoardEvent, type InsertWorkshopBoardEvent,
+  type InternalAccessUser, type InsertInternalAccessUser,
   type AuditEvent, type InsertAuditEvent,
   type SystemSetting,
   type WorkshopLane,
@@ -16,6 +17,10 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, ilike, desc, asc, sql, gte, isNull, inArray } from "drizzle-orm";
+
+function isUndefinedTableError(error: unknown): error is { code: string } {
+  return !!error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "42P01";
+}
 
 export interface IStorage {
   // Customer Accounts
@@ -63,6 +68,13 @@ export interface IStorage {
   // System Settings
   getSystemSetting(key: string): Promise<string | null>;
   setSystemSetting(key: string, value: string): Promise<void>;
+
+  // Internal access users
+  getInternalAccessUsers(): Promise<InternalAccessUser[]>;
+  getInternalAccessUserByEmail(email: string): Promise<InternalAccessUser | undefined>;
+  createInternalAccessUser(user: InsertInternalAccessUser): Promise<InternalAccessUser>;
+  updateInternalAccessUser(id: string, patch: Partial<InsertInternalAccessUser>): Promise<InternalAccessUser | undefined>;
+  updateInternalAccessLastLogin(email: string): Promise<void>;
 
   // Job Overrides
   getJobOverride(jobId: string): Promise<JobOverride | undefined>;
@@ -388,6 +400,91 @@ export class DatabaseStorage implements IStorage {
   async setSystemSetting(key: string, value: string): Promise<void> {
     await db.insert(systemSettings).values({ key, value, updatedAt: new Date() })
       .onConflictDoUpdate({ target: systemSettings.key, set: { value, updatedAt: new Date() } });
+  }
+
+  // Internal access users
+  async getInternalAccessUsers(): Promise<InternalAccessUser[]> {
+    try {
+      return await db.select().from(internalAccessUsers).orderBy(asc(internalAccessUsers.email));
+    } catch (error) {
+      if (isUndefinedTableError(error)) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async getInternalAccessUserByEmail(email: string): Promise<InternalAccessUser | undefined> {
+    const normalizedEmail = email.trim().toLowerCase();
+    try {
+      const [user] = await db
+        .select()
+        .from(internalAccessUsers)
+        .where(sql`lower(${internalAccessUsers.email}) = lower(${normalizedEmail})`)
+        .limit(1);
+      return user || undefined;
+    } catch (error) {
+      if (isUndefinedTableError(error)) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  async createInternalAccessUser(user: InsertInternalAccessUser): Promise<InternalAccessUser> {
+    const normalizedEmail = user.email.trim().toLowerCase();
+    const [created] = await db
+      .insert(internalAccessUsers)
+      .values({
+        ...user,
+        email: normalizedEmail,
+        displayName: user.displayName?.trim() || null,
+        updatedAt: new Date(),
+      })
+      .returning();
+    return created;
+  }
+
+  async updateInternalAccessUser(id: string, patch: Partial<InsertInternalAccessUser>): Promise<InternalAccessUser | undefined> {
+    const update: Partial<typeof internalAccessUsers.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+
+    if (patch.email !== undefined) {
+      update.email = patch.email.trim().toLowerCase();
+    }
+    if (patch.displayName !== undefined) {
+      update.displayName = patch.displayName?.trim() || null;
+    }
+    if (patch.canWorkshop !== undefined) {
+      update.canWorkshop = patch.canWorkshop;
+    }
+    if (patch.canComms !== undefined) {
+      update.canComms = patch.canComms;
+    }
+    if (patch.isActive !== undefined) {
+      update.isActive = patch.isActive;
+    }
+
+    const [updated] = await db
+      .update(internalAccessUsers)
+      .set(update)
+      .where(eq(internalAccessUsers.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async updateInternalAccessLastLogin(email: string): Promise<void> {
+    try {
+      await db
+        .update(internalAccessUsers)
+        .set({ lastLoginAt: new Date(), updatedAt: new Date() })
+        .where(sql`lower(${internalAccessUsers.email}) = lower(${email.trim().toLowerCase()})`);
+    } catch (error) {
+      if (!isUndefinedTableError(error)) {
+        throw error;
+      }
+    }
   }
 
   // Job Overrides

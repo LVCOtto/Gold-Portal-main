@@ -215,6 +215,21 @@ export const workshopBoardEvents = pgTable("workshop_board_events", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const internalAccessUsers = pgTable("internal_access_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  displayName: text("display_name"),
+  canWorkshop: boolean("can_workshop").notNull().default(false),
+  canComms: boolean("can_comms").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  emailIdx: index("internal_access_users_email_idx").on(table.email),
+  isActiveIdx: index("internal_access_users_is_active_idx").on(table.isActive),
+}));
+
 // System Settings (for last import timestamp)
 export const systemSettings = pgTable("system_settings", {
   key: text("key").primaryKey(),
@@ -279,6 +294,13 @@ export const insertWorkshopBoardEventSchema = createInsertSchema(workshopBoardEv
   createdAt: true,
 });
 
+export const insertInternalAccessUserSchema = createInsertSchema(internalAccessUsers).omit({
+  id: true,
+  lastLoginAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({
   id: true,
   createdAt: true,
@@ -311,6 +333,9 @@ export type InsertWorkshopBoardCard = z.infer<typeof insertWorkshopBoardCardSche
 
 export type WorkshopBoardEvent = typeof workshopBoardEvents.$inferSelect;
 export type InsertWorkshopBoardEvent = z.infer<typeof insertWorkshopBoardEventSchema>;
+
+export type InternalAccessUser = typeof internalAccessUsers.$inferSelect;
+export type InsertInternalAccessUser = z.infer<typeof insertInternalAccessUserSchema>;
 
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;

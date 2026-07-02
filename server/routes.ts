@@ -17,6 +17,7 @@ import { getDefaultWorkshopLane, isWorkshopLane } from "@shared/schema";
 import { storage } from "./storage";
 import { pool } from "./db";
 import { commsRouter } from "./comms/comms-routes";
+import { hasInternalAccess, normalizeInternalEmail, resolveInternalAccess } from "./internal-access";
 
 const workshopJobTypeMatchers = (process.env.WORKSHOP_JOB_TYPE_MATCHES || "workshop")
   .split(",")
@@ -844,9 +845,15 @@ export async function registerRoutes(
 
   app.post("/api/auth/workshop/request-otp", adminOtpRequestLimiter, async (req, res) => {
     try {
-      const workshopEmail = await getWorkshopTeamEmail();
-      if (!workshopEmail) {
-        return res.status(400).json({ message: "Workshop email has not been configured by the admin yet" });
+      const parsed = z.object({ email: z.string().trim().email("Enter a valid email address") }).safeParse(req.body || {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Enter a valid email address" });
+      }
+
+      const workshopEmail = normalizeInternalEmail(parsed.data.email);
+      const access = await resolveInternalAccess(workshopEmail);
+      if (!hasInternalAccess(access, "workshop")) {
+        return res.json({ message: "If that address is allowed, a code will be sent.", sent: true });
       }
 
       const key = lockoutKey("admin", `workshop:${workshopEmail}`);
@@ -875,7 +882,7 @@ export async function registerRoutes(
       }
 
       await audit(req, "workshop.otp.requested", { actorType: "system", actorId: workshopEmail });
-      res.json({ message: "Code sent", expiresInSeconds: ADMIN_OTP_TTL_MS / 1000 });
+      res.json({ message: "Code sent", sent: true, expiresInSeconds: ADMIN_OTP_TTL_MS / 1000 });
     } catch (error) {
       console.error("Workshop OTP request error:", error);
       res.status(500).json({ message: "Internal server error" });
@@ -920,9 +927,17 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Invalid login code" });
       }
 
+      const access = await resolveInternalAccess(challenge.email);
+      if (!hasInternalAccess(access, "workshop")) {
+        delete req.session.workshopOtp;
+        await audit(req, "workshop.login.denied", { actorType: "system", actorId: challenge.email });
+        return res.status(403).json({ message: "This email address is no longer allowed to access the workshop portal" });
+      }
+
       clearFailures(key);
       await regenerateSession(req);
       req.session.user = { type: "workshop", email: challenge.email };
+      await storage.updateInternalAccessLastLogin(challenge.email).catch(() => undefined);
       await audit(req, "workshop.login.success", { actorType: "system", actorId: challenge.email });
       await saveSession(req);
       res.json({ user: req.session.user });
@@ -988,6 +1003,99 @@ export async function registerRoutes(
       res.json(await getCommunicationSettings());
     } catch (error) {
       console.error("Communication settings update error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/admin/settings/internal-access", requireAuth("admin"), async (_req, res) => {
+    try {
+      const users = await storage.getInternalAccessUsers();
+      res.json({ users });
+    } catch (error) {
+      console.error("Internal access fetch error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/admin/settings/internal-access", requireAuth("admin"), async (req, res) => {
+    try {
+      const parsed = z.object({
+        email: z.string().trim().email("Enter a valid email address"),
+        displayName: z.string().trim().max(120).optional().or(z.literal("")),
+        canWorkshop: z.boolean().default(false),
+        canComms: z.boolean().default(false),
+        isActive: z.boolean().default(true),
+      }).safeParse(req.body || {});
+
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid internal access user" });
+      }
+
+      const normalizedEmail = normalizeInternalEmail(parsed.data.email);
+      const existing = await storage.getInternalAccessUserByEmail(normalizedEmail);
+      const payload = {
+        email: normalizedEmail,
+        displayName: parsed.data.displayName || null,
+        canWorkshop: parsed.data.canWorkshop,
+        canComms: parsed.data.canComms,
+        isActive: parsed.data.isActive,
+      };
+
+      const user = existing
+        ? await storage.updateInternalAccessUser(existing.id, payload)
+        : await storage.createInternalAccessUser(payload);
+
+      await audit(req, existing ? "internal_access.updated" : "internal_access.created", {
+        actorType: "admin",
+        actorId: "admin",
+        targetType: "internal_access_user",
+        targetId: normalizedEmail,
+        payload,
+      });
+
+      res.json({ user });
+    } catch (error) {
+      console.error("Internal access create error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/admin/settings/internal-access/:id", requireAuth("admin"), async (req, res) => {
+    try {
+      const parsed = z.object({
+        email: z.string().trim().email("Enter a valid email address").optional(),
+        displayName: z.string().trim().max(120).optional().or(z.literal("")),
+        canWorkshop: z.boolean().optional(),
+        canComms: z.boolean().optional(),
+        isActive: z.boolean().optional(),
+      }).safeParse(req.body || {});
+
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid internal access update" });
+      }
+
+      const patch = {
+        ...parsed.data,
+        email: parsed.data.email ? normalizeInternalEmail(parsed.data.email) : undefined,
+        displayName: parsed.data.displayName === undefined ? undefined : parsed.data.displayName || null,
+      };
+
+      const user = await storage.updateInternalAccessUser(req.params.id, patch);
+      if (!user) {
+        return res.status(404).json({ message: "Internal access user not found" });
+      }
+
+      await audit(req, "internal_access.updated", {
+        actorType: "admin",
+        actorId: "admin",
+        targetType: "internal_access_user",
+        targetId: user.email,
+        payload: patch,
+      });
+
+      res.json({ user });
+    } catch (error) {
+      console.error("Internal access update error:", error);
       res.status(500).json({ message: "Internal server error" });
     }
   });

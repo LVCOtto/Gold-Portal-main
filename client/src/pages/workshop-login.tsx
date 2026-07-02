@@ -13,35 +13,49 @@ import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import lvcLogo from "@assets/logo.png";
 
-const loginSchema = z.object({
+const emailSchema = z.object({
+  email: z.string().email("Enter a valid email address"),
+});
+
+const codeSchema = z.object({
   code: z.string().regex(/^\d{6}$/, "Enter the 6 digit code"),
 });
 
-type LoginForm = z.infer<typeof loginSchema>;
+type EmailForm = z.infer<typeof emailSchema>;
+type CodeForm = z.infer<typeof codeSchema>;
 
 export default function WorkshopLoginPage() {
   const { requestWorkshopOtp, verifyWorkshopOtp } = useAuth();
   const { toast } = useToast();
-  const [codeSent, setCodeSent] = useState(false);
+  const [step, setStep] = useState<"email" | "code">("email");
+  const [pendingEmail, setPendingEmail] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
 
-  const form = useForm<LoginForm>({
-    resolver: zodResolver(loginSchema),
+  const emailForm = useForm<EmailForm>({
+    resolver: zodResolver(emailSchema),
+    defaultValues: {
+      email: "",
+    },
+  });
+
+  const codeForm = useForm<CodeForm>({
+    resolver: zodResolver(codeSchema),
     defaultValues: {
       code: "",
     },
   });
 
-  async function sendCode() {
+  async function onEmailSubmit(data: EmailForm) {
     setIsSending(true);
     try {
-      await requestWorkshopOtp();
-      setCodeSent(true);
-      form.reset({ code: "" });
+      await requestWorkshopOtp(data.email);
+      setPendingEmail(data.email);
+      setStep("code");
+      codeForm.reset({ code: "" });
       toast({
         title: "Code sent",
-        description: "Check the configured workshop inbox for your login code.",
+        description: `Check ${data.email} for your workshop login code.`,
       });
     } catch (error) {
       toast({
@@ -54,7 +68,7 @@ export default function WorkshopLoginPage() {
     }
   }
 
-  async function onSubmit(data: LoginForm) {
+  async function onCodeSubmit(data: CodeForm) {
     setIsVerifying(true);
     try {
       await verifyWorkshopOtp(data.code);
@@ -92,20 +106,52 @@ export default function WorkshopLoginPage() {
 
           <Card className="shadow-lg">
             <CardHeader className="pb-4 text-center">
-              <CardTitle className="text-xl">Workshop Sign In</CardTitle>
-              <CardDescription>Email code to the configured workshop inbox</CardDescription>
+              <CardTitle className="text-xl">{step === "email" ? "Workshop Sign In" : "Enter Code"}</CardTitle>
+              <CardDescription>
+                {step === "email"
+                  ? "Enter your workshop email address to receive a login code"
+                  : `Enter the 6-digit code sent to ${pendingEmail}`}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {!codeSent ? (
-                <Button type="button" className="h-11 w-full text-base font-medium" disabled={isBusy} onClick={sendCode} data-testid="button-send-workshop-code">
-                  {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-                  Send Code
-                </Button>
-              ) : (
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              {step === "email" ? (
+                <Form {...emailForm}>
+                  <form onSubmit={emailForm.handleSubmit(onEmailSubmit)} className="space-y-5" autoComplete="on">
                     <FormField
-                      control={form.control}
+                      control={emailForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email Address</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                type="email"
+                                autoComplete="email"
+                                placeholder="you@example.com"
+                                className="h-11 pl-9"
+                                {...field}
+                                data-testid="input-workshop-email"
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <Button type="submit" className="h-11 w-full text-base font-medium" disabled={isBusy} data-testid="button-send-workshop-code">
+                      {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                      Send Code
+                    </Button>
+                  </form>
+                </Form>
+              ) : (
+                <Form {...codeForm}>
+                  <form onSubmit={codeForm.handleSubmit(onCodeSubmit)} className="space-y-5">
+                    <FormField
+                      control={codeForm.control}
                       name="code"
                       render={({ field }) => (
                         <FormItem>
@@ -131,8 +177,8 @@ export default function WorkshopLoginPage() {
                       {isVerifying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
                       Sign In
                     </Button>
-                    <Button type="button" variant="outline" className="w-full" disabled={isBusy} onClick={sendCode}>
-                      Send New Code
+                    <Button type="button" variant="outline" className="w-full" disabled={isBusy} onClick={() => setStep("email")}>
+                      Use a Different Email
                     </Button>
                   </form>
                 </Form>
