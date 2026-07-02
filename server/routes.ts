@@ -18,6 +18,7 @@ import { storage } from "./storage";
 import { pool } from "./db";
 import { commsRouter } from "./comms/comms-routes";
 import { hasInternalAccess, normalizeInternalEmail, resolveInternalAccess } from "./internal-access";
+import { renderBrandedOperationalEmail, WORKSHOP_UPDATE_SENDER } from "./email-branding";
 
 const workshopJobTypeMatchers = (process.env.WORKSHOP_JOB_TYPE_MATCHES || "workshop")
   .split(",")
@@ -346,28 +347,36 @@ async function sendWorkshopUpdateEmail(req: Request, input: {
   to: string;
   subject: string;
   text: string;
-  html: string;
+  greeting?: string;
+  metaRows?: Array<{ label: string; value: string | null | undefined }>;
 }) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM || process.env.EMAIL_FROM;
+  const from = WORKSHOP_UPDATE_SENDER.from;
   if (!apiKey) {
     throw new Error("RESEND_API_KEY must be set to send workshop updates");
   }
   if (!from) {
-    throw new Error("RESEND_FROM or EMAIL_FROM must be set to send workshop updates");
+    throw new Error("WORKSHOP_UPDATES_FROM must be set to send workshop updates");
   }
 
   const settings = await getWorkshopEmailSettings();
   const recipient = settings.workshopEmailDemoModeEnabled ? settings.workshopEmailDemoRecipient : input.to;
+  const html = renderBrandedOperationalEmail({
+    subject: input.subject,
+    greeting: input.greeting,
+    bodyText: input.text,
+    metaRows: input.metaRows,
+    sender: WORKSHOP_UPDATE_SENDER,
+  });
 
   const payload: Record<string, unknown> = {
     from,
     to: [recipient],
     subject: settings.workshopEmailDemoModeEnabled ? `[DEMO] ${input.subject}` : input.subject,
     text: input.text,
-    html: input.html,
+    html,
   };
-  if (process.env.RESEND_REPLY_TO) payload.reply_to = process.env.RESEND_REPLY_TO;
+  payload.reply_to = process.env.RESEND_REPLY_TO || WORKSHOP_UPDATE_SENDER.contactEmail;
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -411,8 +420,13 @@ function buildWorkshopUpdateMessage(input: {
   ].filter(Boolean) as string[];
 
   const text = lines.join("\n\n");
-  const html = lines.map((line) => `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`).join("");
-  return { subject, text, html };
+  const metaRows = [
+    { label: "Job Reference", value: input.jobId },
+    { label: "Workshop Stage", value: input.laneLabel },
+    { label: "Site", value: input.siteName },
+    { label: "Equipment", value: input.equipment || null },
+  ];
+  return { subject, text, metaRows };
 }
 
 function saveSession(req: Request): Promise<void> {
@@ -1996,7 +2010,8 @@ export async function registerRoutes(
             to: customerEmail as string,
             subject: message.subject,
             text: message.text,
-            html: message.html,
+            greeting: "Greetings,",
+            metaRows: message.metaRows,
           });
 
           await storage.updateWorkshopBoardCard({

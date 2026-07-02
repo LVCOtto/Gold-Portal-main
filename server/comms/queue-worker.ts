@@ -26,6 +26,7 @@ import {
 } from "./comms-storage";
 import { renderCommsForJob } from "./render-engine";
 import type { CommsQueueItem } from "@shared/schema";
+import { renderBrandedOperationalEmail, SERVICE_UPDATE_SENDER } from "../email-branding";
 
 const DEFAULT_COOLDOWN_DAYS = Number(process.env.COMMS_DEFAULT_COOLDOWN_DAYS || "7");
 const BATCH_SIZE = Number(process.env.COMMS_WORKER_BATCH_SIZE || "20");
@@ -42,31 +43,37 @@ async function sendCommsEmail(input: {
   name: string;
   subject: string;
   body: string;
+  jobId: string;
+  siteName: string | null;
+  status: string | null;
 }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM || process.env.EMAIL_FROM;
+  const from = SERVICE_UPDATE_SENDER.from;
   if (!apiKey) throw new Error("RESEND_API_KEY not set");
-  if (!from) throw new Error("RESEND_FROM or EMAIL_FROM not set");
+  if (!from) throw new Error("SERVICE_UPDATES_FROM not set");
 
   const recipient = COMMS_DEMO_MODE && COMMS_DEMO_RECIPIENT ? COMMS_DEMO_RECIPIENT : input.to;
   const subject = COMMS_DEMO_MODE ? `[DEMO] ${input.subject}` : input.subject;
-  const htmlBody = input.body
-    .split("\n")
-    .map((line) =>
-      line.trim() === ""
-        ? "<br/>"
-        : `<p style="margin:0 0 12px 0;">${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`,
-    )
-    .join("");
+  const html = renderBrandedOperationalEmail({
+    subject,
+    greeting: `Greetings ${input.name || "there"},`,
+    bodyText: input.body,
+    metaRows: [
+      { label: "Job Reference", value: input.jobId },
+      { label: "Site", value: input.siteName || null },
+      { label: "Current Status", value: input.status || null },
+    ],
+    sender: SERVICE_UPDATE_SENDER,
+  });
 
   const payload: Record<string, unknown> = {
     from,
     to: [recipient],
     subject,
     text: input.body,
-    html: `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1a1a1a;max-width:600px;">${htmlBody}</div>`,
+    html,
   };
-  if (process.env.RESEND_REPLY_TO) payload.reply_to = process.env.RESEND_REPLY_TO;
+  payload.reply_to = process.env.RESEND_REPLY_TO || SERVICE_UPDATE_SENDER.contactEmail;
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -181,6 +188,9 @@ async function processQueueItem(item: CommsQueueItem, workerId: string): Promise
       name: snapshot.clientName ?? recipientEmail,
       subject: rendered.subject,
       body: rendered.body,
+      jobId: snapshot.externalJobId,
+      siteName: snapshot.siteName ?? null,
+      status: snapshot.status ?? null,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
