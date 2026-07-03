@@ -219,6 +219,7 @@ export const internalAccessUsers = pgTable("internal_access_users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
   displayName: text("display_name"),
+  canAdmin: boolean("can_admin").notNull().default(false),
   canWorkshop: boolean("can_workshop").notNull().default(false),
   canComms: boolean("can_comms").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),

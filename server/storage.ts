@@ -456,6 +456,9 @@ export class DatabaseStorage implements IStorage {
     if (patch.displayName !== undefined) {
       update.displayName = patch.displayName?.trim() || null;
     }
+    if (patch.canAdmin !== undefined) {
+      update.canAdmin = patch.canAdmin;
+    }
     if (patch.canWorkshop !== undefined) {
       update.canWorkshop = patch.canWorkshop;
     }

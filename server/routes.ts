@@ -235,7 +235,7 @@ function isAdminIpAllowed(req: Request): boolean {
   );
 }
 
-async function sendAdminOtpEmail(req: Request, code: string) {
+async function sendAdminOtpEmail(req: Request, code: string, toEmail: string) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM || process.env.EMAIL_FROM;
   if (!apiKey) {
@@ -249,7 +249,7 @@ async function sendAdminOtpEmail(req: Request, code: string) {
 
   const payload: Record<string, unknown> = {
     from,
-    to: [ADMIN_EMAIL],
+    to: [toEmail],
     subject: "LVC Portal admin login code",
     text: `Your LVC Portal admin login code is ${code}. It expires in ${expiresInMinutes} minutes.`,
     html: `<p>Your LVC Portal admin login code is:</p><p style="font-size:24px;letter-spacing:4px;font-weight:700;">${code}</p><p>It expires in ${expiresInMinutes} minutes.</p>`,
@@ -769,7 +769,18 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Access denied from this location" });
       }
 
-      const key = adminOtpLockoutKey();
+      const parsed = z.object({ email: z.string().trim().email("Enter a valid email address") }).safeParse(req.body || {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Enter a valid email address" });
+      }
+
+      const requestedEmail = normalizeInternalEmail(parsed.data.email);
+      const access = await resolveInternalAccess(requestedEmail);
+      if (!hasInternalAccess(access, "admin")) {
+        return res.json({ message: "If that address is allowed, a code will be sent.", sent: true });
+      }
+
+      const key = lockoutKey("admin", requestedEmail);
       const lockedFor = isLockedOut(key);
       if (lockedFor > 0) {
         return res.status(429).json({ message: `Admin login locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
@@ -777,7 +788,7 @@ export async function registerRoutes(
 
       const code = generateAdminOtp();
       req.session.adminOtp = {
-        email: ADMIN_EMAIL,
+        email: requestedEmail,
         codeHash: hashAdminOtp(req.sessionID, code),
         expiresAt: Date.now() + ADMIN_OTP_TTL_MS,
         attempts: 0,
@@ -787,15 +798,15 @@ export async function registerRoutes(
       };
 
       try {
-        await sendAdminOtpEmail(req, code);
+        await sendAdminOtpEmail(req, code, requestedEmail);
       } catch (error) {
         delete req.session.adminOtp;
         console.error("Admin OTP email error:", error);
         return res.status(500).json({ message: "Admin login email is not configured" });
       }
 
-      await audit(req, "admin.otp.requested", { actorType: "admin", actorId: ADMIN_EMAIL });
-      res.json({ message: "Code sent", email: ADMIN_EMAIL, expiresInSeconds: ADMIN_OTP_TTL_MS / 1000 });
+      await audit(req, "admin.otp.requested", { actorType: "admin", actorId: requestedEmail });
+      res.json({ message: "Code sent", email: requestedEmail, sent: true, expiresInSeconds: ADMIN_OTP_TTL_MS / 1000 });
     } catch (error) {
       console.error("Admin OTP request error:", error);
       res.status(500).json({ message: "Internal server error" });
@@ -814,14 +825,15 @@ export async function registerRoutes(
         return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid code" });
       }
 
-      const key = adminOtpLockoutKey();
+      const challengeEmail = req.session.adminOtp?.email || ADMIN_EMAIL;
+      const key = lockoutKey("admin", challengeEmail);
       const lockedFor = isLockedOut(key);
       if (lockedFor > 0) {
         return res.status(429).json({ message: `Admin login locked. Try again in ${Math.ceil(lockedFor / 60000)} minute(s).` });
       }
 
       const challenge = req.session.adminOtp;
-      if (!challenge || challenge.email !== ADMIN_EMAIL) {
+      if (!challenge) {
         return res.status(400).json({ message: "Request a new login code" });
       }
 
@@ -833,7 +845,7 @@ export async function registerRoutes(
       if (challenge.attempts >= ADMIN_OTP_MAX_ATTEMPTS) {
         delete req.session.adminOtp;
         recordFailure(key);
-        await audit(req, "admin.otp.too_many_attempts", { actorType: "admin", actorId: ADMIN_EMAIL });
+        await audit(req, "admin.otp.too_many_attempts", { actorType: "admin", actorId: challenge.email });
         return res.status(429).json({ message: "Too many incorrect codes. Request a new login code." });
       }
 
@@ -841,14 +853,22 @@ export async function registerRoutes(
       if (!safeStringEqual(expectedHash, challenge.codeHash)) {
         req.session.adminOtp = { ...challenge, attempts: challenge.attempts + 1 };
         recordFailure(key);
-        await audit(req, "admin.otp.failure", { actorType: "admin", actorId: ADMIN_EMAIL });
+        await audit(req, "admin.otp.failure", { actorType: "admin", actorId: challenge.email });
         return res.status(401).json({ message: "Invalid login code" });
+      }
+
+      const access = await resolveInternalAccess(challenge.email);
+      if (!hasInternalAccess(access, "admin")) {
+        delete req.session.adminOtp;
+        await audit(req, "admin.login.denied", { actorType: "admin", actorId: challenge.email });
+        return res.status(403).json({ message: "This email address is no longer allowed to access the admin portal" });
       }
 
       clearFailures(key);
       await regenerateSession(req);
-      req.session.user = { type: "admin", email: ADMIN_EMAIL };
-      await audit(req, "admin.login.success", { actorType: "admin", actorId: ADMIN_EMAIL });
+      req.session.user = { type: "admin", email: challenge.email };
+      await storage.updateInternalAccessLastLogin(challenge.email).catch(() => undefined);
+      await audit(req, "admin.login.success", { actorType: "admin", actorId: challenge.email });
       await saveSession(req);
       res.json({ user: req.session.user });
     } catch (error) {

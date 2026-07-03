@@ -20,6 +20,7 @@ type InternalAccessUser = {
   id: string;
   email: string;
   displayName: string | null;
+  canAdmin: boolean;
   canWorkshop: boolean;
   canComms: boolean;
   isActive: boolean;
@@ -29,6 +30,7 @@ type InternalAccessUser = {
 type NewInternalAccessUser = {
   email: string;
   displayName: string;
+  canAdmin: boolean;
   canWorkshop: boolean;
   canComms: boolean;
   isActive: boolean;
@@ -62,6 +64,7 @@ export default function AdminSettingsPage() {
   const [newInternalAccessUser, setNewInternalAccessUser] = useState<NewInternalAccessUser>({
     email: "",
     displayName: "",
+    canAdmin: false,
     canWorkshop: true,
     canComms: false,
     isActive: true,
@@ -104,7 +107,7 @@ export default function AdminSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/internal-access"] });
-      setNewInternalAccessUser({ email: "", displayName: "", canWorkshop: true, canComms: false, isActive: true });
+      setNewInternalAccessUser({ email: "", displayName: "", canAdmin: false, canWorkshop: true, canComms: false, isActive: true });
       toast({ title: "Internal access saved", description: "The internal user has been added or updated." });
     },
     onError: (error) => {
@@ -120,6 +123,7 @@ export default function AdminSettingsPage() {
     mutationFn: async (payload: InternalAccessUser) => {
       const response = await apiRequest("PATCH", `/api/admin/settings/internal-access/${payload.id}`, {
         displayName: payload.displayName || "",
+        canAdmin: payload.canAdmin,
         canWorkshop: payload.canWorkshop,
         canComms: payload.canComms,
         isActive: payload.isActive,
@@ -278,6 +282,17 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-8">
+                <div className="flex items-center justify-between gap-4 md:min-w-52">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="new-internal-admin">Admin</Label>
+                  </div>
+                  <Switch
+                    id="new-internal-admin"
+                    checked={newInternalAccessUser.canAdmin}
+                    onCheckedChange={(checked) => setNewInternalAccessUser((current) => ({ ...current, canAdmin: checked }))}
+                  />
+                </div>
                 <div className="flex items-center justify-between gap-4 md:min-w-52">
                   <div className="flex items-center gap-2">
                     <Wrench className="h-4 w-4 text-muted-foreground" />

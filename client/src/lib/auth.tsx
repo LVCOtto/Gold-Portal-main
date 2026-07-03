@@ -16,7 +16,7 @@ interface AuthContextType {
   mustChangePassword: boolean;
   requestCustomerOtp: (credentials: { accountCode: string; email: string }) => Promise<void>;
   verifyCustomerOtp: (code: string) => Promise<void>;
-  requestAdminOtp: () => Promise<void>;
+  requestAdminOtp: (email: string) => Promise<void>;
   verifyAdminOtp: (code: string) => Promise<void>;
   requestWorkshopOtp: (email: string) => Promise<void>;
   verifyWorkshopOtp: (code: string) => Promise<void>;
@@ -76,8 +76,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLocation("/dashboard");
   }
 
-  async function requestAdminOtp() {
-    await apiRequest("POST", "/api/auth/admin/request-otp");
+  async function requestAdminOtp(email: string) {
+    await apiRequest("POST", "/api/auth/admin/request-otp", { email });
   }
 
   async function verifyAdminOtp(code: string) {

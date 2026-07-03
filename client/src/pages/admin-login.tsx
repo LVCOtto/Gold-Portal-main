@@ -13,18 +13,29 @@ import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import lvcLogo from "@assets/logo.png";
 
+const emailSchema = z.object({
+  email: z.string().email("Enter a valid email address"),
+});
+
 const loginSchema = z.object({
   code: z.string().regex(/^\d{6}$/, "Enter the 6 digit code"),
 });
 
+type EmailForm = z.infer<typeof emailSchema>;
 type LoginForm = z.infer<typeof loginSchema>;
 
 export default function AdminLoginPage() {
   const { requestAdminOtp, verifyAdminOtp } = useAuth();
   const { toast } = useToast();
-  const [codeSent, setCodeSent] = useState(false);
+  const [step, setStep] = useState<"email" | "code">("email");
+  const [pendingEmail, setPendingEmail] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+
+  const emailForm = useForm<EmailForm>({
+    resolver: zodResolver(emailSchema),
+    defaultValues: { email: "" },
+  });
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -33,15 +44,16 @@ export default function AdminLoginPage() {
     },
   });
 
-  async function sendCode() {
+  async function sendCode(data: EmailForm) {
     setIsSending(true);
     try {
-      await requestAdminOtp();
-      setCodeSent(true);
+      await requestAdminOtp(data.email);
+      setPendingEmail(data.email);
+      setStep("code");
       form.reset({ code: "" });
       toast({
         title: "Code sent",
-        description: "Check otto@lvcuk.com for your admin login code.",
+        description: `Check ${data.email} for your admin login code.`,
       });
     } catch (error) {
       toast({
@@ -97,23 +109,52 @@ export default function AdminLoginPage() {
           
           <Card className="shadow-lg">
             <CardHeader className="text-center pb-4">
-              <CardTitle className="text-xl">Admin Sign In</CardTitle>
+              <CardTitle className="text-xl">{step === "email" ? "Admin Sign In" : "Enter Code"}</CardTitle>
               <CardDescription>
-                Email code for otto@lvcuk.com
+                {step === "email"
+                  ? "Enter your admin email address to receive a login code"
+                  : `Enter the 6-digit code sent to ${pendingEmail}`}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {!codeSent ? (
-                <Button
-                  type="button"
-                  className="w-full h-11 text-base font-medium"
-                  disabled={isBusy}
-                  onClick={sendCode}
-                  data-testid="button-send-admin-code"
-                >
-                  {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-                  Send Code
-                </Button>
+              {step === "email" ? (
+                <Form {...emailForm}>
+                  <form onSubmit={emailForm.handleSubmit(sendCode)} className="space-y-5" autoComplete="on">
+                    <FormField
+                      control={emailForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email Address</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                type="email"
+                                autoComplete="email"
+                                placeholder="you@example.com"
+                                className="h-11 pl-9"
+                                {...field}
+                                data-testid="input-admin-email"
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <Button
+                      type="submit"
+                      className="w-full h-11 text-base font-medium"
+                      disabled={isBusy}
+                      data-testid="button-send-admin-code"
+                    >
+                      {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                      Send Code
+                    </Button>
+                  </form>
+                </Form>
               ) : (
                 <Form {...form}>
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
@@ -149,8 +190,8 @@ export default function AdminLoginPage() {
                       {isVerifying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
                       Sign In
                     </Button>
-                    <Button type="button" variant="outline" className="w-full" disabled={isBusy} onClick={sendCode}>
-                      Send New Code
+                    <Button type="button" variant="outline" className="w-full" disabled={isBusy} onClick={() => setStep("email")}>
+                      Use a Different Email
                     </Button>
                   </form>
                 </Form>
