@@ -777,7 +777,7 @@ export async function registerRoutes(
       const requestedEmail = normalizeInternalEmail(parsed.data.email);
       const access = await resolveInternalAccess(requestedEmail);
       if (!hasInternalAccess(access, "admin")) {
-        return res.json({ message: "If that address is allowed, a code will be sent.", sent: true });
+        return res.status(403).json({ message: "That email address is not enabled for admin access." });
       }
 
       const key = lockoutKey("admin", requestedEmail);
@@ -887,7 +887,7 @@ export async function registerRoutes(
       const workshopEmail = normalizeInternalEmail(parsed.data.email);
       const access = await resolveInternalAccess(workshopEmail);
       if (!hasInternalAccess(access, "workshop")) {
-        return res.json({ message: "If that address is allowed, a code will be sent.", sent: true });
+        return res.status(403).json({ message: "That email address is not enabled for workshop access." });
       }
 
       const key = lockoutKey("admin", `workshop:${workshopEmail}`);
