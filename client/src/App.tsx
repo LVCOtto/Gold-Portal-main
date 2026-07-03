@@ -21,6 +21,7 @@ import WorkshopBoardPage from "@/pages/admin/workshop-board";
 import { AdminCustomerPortalRoute } from "@/pages/admin/customer-portal-route";
 import AdminSettingsPage from "@/pages/admin/settings";
 import ChangePasswordPage from "@/pages/change-password";
+import LiveBreakdownsPage from "@/pages/live-breakdowns";
 import CommsLoginPage from "@/pages/comms/login";
 import CommsJobsPage from "@/pages/comms/jobs";
 import CommsJobDetailPage from "@/pages/comms/job-detail";
@@ -152,6 +153,14 @@ function Router() {
         <ProtectedRoute requiredTypes={["customer"]}>
           <QuoteDetailPage />
         </ProtectedRoute>
+      </Route>
+
+      {/* Public live breakdown board */}
+      <Route path="/live-breakdowns">
+        <LiveBreakdownsPage />
+      </Route>
+      <Route path="/breakdowns">
+        <LiveBreakdownsPage />
       </Route>
 
       {/* Admin Routes */}

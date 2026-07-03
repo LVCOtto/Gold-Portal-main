@@ -1290,6 +1290,21 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/public/live-breakdowns", async (_req, res) => {
+    try {
+      const jobs = await storage.getLiveBreakdownJobs();
+      res.setHeader("Cache-Control", "no-store");
+      res.json({
+        jobs,
+        total: jobs.length,
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Live breakdown jobs fetch error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // ==================== QUOTES ROUTES ====================
   
   app.get("/api/quotes", requireAuth(), async (req, res) => {

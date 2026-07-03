@@ -37,6 +37,7 @@ export interface IStorage {
   getJob(id: string): Promise<Job | undefined>;
   getJobByJobId(jobId: string, accountCode?: string): Promise<Job | undefined>;
   getJobs(filters: { accountCode?: string; search?: string; status?: string; priority?: string; page?: number; pageSize?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' }): Promise<{ jobs: Job[]; total: number }>;
+  getLiveBreakdownJobs(): Promise<Job[]>;
   createJob(job: InsertJob): Promise<Job>;
   deleteJobsByBatch(batchId: string): Promise<void>;
   clearAllJobs(): Promise<void>;
@@ -230,6 +231,20 @@ export class DatabaseStorage implements IStorage {
       .offset((page - 1) * pageSize);
 
     return { jobs: result, total };
+  }
+
+  async getLiveBreakdownJobs(): Promise<Job[]> {
+    const conditions = [
+      ilike(jobs.jobType, "%Breakdown%"),
+      or(
+        ilike(jobs.status, "%Pending Engineer Visit%"),
+        ilike(jobs.status, "%Processing%")
+      )!,
+    ];
+
+    return db.select().from(jobs)
+      .where(and(...conditions))
+      .orderBy(desc(jobs.lastUpdatedDate));
   }
 
   async createJob(job: InsertJob): Promise<Job> {

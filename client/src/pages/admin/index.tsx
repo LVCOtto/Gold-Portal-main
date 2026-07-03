@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Users, Database, ArrowRight, Settings, Upload, CheckCircle, AlertCircle } from "lucide-react";
+import { Users, Database, ArrowRight, Settings, Upload, CheckCircle, AlertCircle, Radio } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -263,6 +263,12 @@ export default function AdminDashboard() {
                 <Button variant="outline" className="w-full justify-start gap-3" data-testid="button-manage-accounts">
                   <Users className="h-4 w-4" />
                   Manage Accounts
+                </Button>
+              </Link>
+              <Link href="/breakdowns">
+                <Button variant="outline" className="w-full justify-start gap-3" data-testid="button-live-breakdowns">
+                  <Radio className="h-4 w-4" />
+                  Live Breakdown Board
                 </Button>
               </Link>
               <Link href="/admin/settings">
