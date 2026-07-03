@@ -157,7 +157,7 @@ export default function AdminLoginPage() {
                 </Form>
               ) : (
                 <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+                  <form key="otp-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-5" autoComplete="off">
                     <FormField
                       control={form.control}
                       name="code"
@@ -166,11 +166,17 @@ export default function AdminLoginPage() {
                           <FormLabel>Login Code</FormLabel>
                           <FormControl>
                             <Input
+                              type="tel"
                               inputMode="numeric"
                               autoComplete="one-time-code"
+                              autoCorrect="off"
+                              spellCheck={false}
+                              enterKeyHint="done"
+                              pattern="[0-9]*"
                               placeholder="000000"
                               maxLength={6}
                               {...field}
+                              name="otp"
                               onChange={(event) => field.onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
                               className="h-11 text-center text-lg tracking-[0.3em]"
                               data-testid="input-admin-otp"
