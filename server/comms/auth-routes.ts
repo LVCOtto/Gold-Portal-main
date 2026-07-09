@@ -94,20 +94,19 @@ export function registerCommsAuthRoutes(router: Router) {
     try {
       const { email } = req.body as { email?: string };
       if (!email || typeof email !== "string") {
-        return res.status(400).json({ error: "email is required" });
+        return res.status(400).json({ message: "Email is required" });
       }
       const normalised = normalizeInternalEmail(email);
       const access = await resolveInternalAccess(normalised);
 
       if (!hasInternalAccess(access, "comms")) {
-        // Return same response as success — don't reveal which emails are allowed
-        return res.json({ sent: true });
+        return res.status(403).json({ message: "That email address is not enabled for Comms access." });
       }
 
       const remainingLock = isLockedOut(normalised);
       if (remainingLock > 0) {
         return res.status(429).json({
-          error: `Too many attempts. Try again in ${Math.ceil(remainingLock / 60000)} minute(s).`,
+          message: `Too many attempts. Try again in ${Math.ceil(remainingLock / 60000)} minute(s).`,
         });
       }
 
@@ -138,18 +137,18 @@ export function registerCommsAuthRoutes(router: Router) {
       const pending = req.session.commsOtp;
 
       if (!pending || !code) {
-        return res.status(400).json({ error: "No pending OTP or code missing" });
+        return res.status(400).json({ message: "No pending OTP or code missing" });
       }
 
       if (Date.now() > pending.expiresAt) {
         delete req.session.commsOtp;
-        return res.status(400).json({ error: "Code has expired — request a new one" });
+        return res.status(400).json({ message: "Code has expired — request a new one" });
       }
 
       if (pending.attempts >= COMMS_OTP_MAX_ATTEMPTS) {
         delete req.session.commsOtp;
         recordFailure(pending.email);
-        return res.status(429).json({ error: "Too many attempts — request a new code" });
+        return res.status(429).json({ message: "Too many attempts — request a new code" });
       }
 
       const expectedHash = pending.codeHash; // stored at request-otp time
@@ -166,14 +165,14 @@ export function registerCommsAuthRoutes(router: Router) {
         pending.attempts += 1;
         await saveSession(req);
         recordFailure(pending.email);
-        return res.status(401).json({ error: "Invalid code" });
+        return res.status(401).json({ message: "Invalid code" });
       }
 
       const access = await resolveInternalAccess(pending.email);
       if (!hasInternalAccess(access, "comms")) {
         delete req.session.commsOtp;
         await saveSession(req);
-        return res.status(403).json({ error: "This email address is no longer allowed to access the comms portal" });
+        return res.status(403).json({ message: "This email address is no longer allowed to access the comms portal" });
       }
 
       clearFailures(pending.email);
@@ -191,7 +190,7 @@ export function registerCommsAuthRoutes(router: Router) {
   // GET /api/comms/auth/me
   router.get("/auth/me", (req, res) => {
     if (!req.session?.commsOperator) {
-      return res.status(401).json({ error: "Not authenticated" });
+      return res.status(401).json({ message: "Not authenticated" });
     }
     return res.json({ operator: req.session.commsOperator });
   });
