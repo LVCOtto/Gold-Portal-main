@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { CommsAuthProvider, useCommsAuth } from "@/lib/comms-auth";
+import { CallbacksAuthProvider, useCallbacksAuth } from "@/lib/callbacks-auth";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import AdminLoginPage from "@/pages/admin-login";
@@ -27,6 +28,11 @@ import CommsJobsPage from "@/pages/comms/jobs";
 import CommsJobDetailPage from "@/pages/comms/job-detail";
 import CommsTemplatesPage from "@/pages/comms/templates";
 import CommsAuditPage from "@/pages/comms/audit";
+import CallbacksLoginPage from "@/pages/callbacks/login";
+import CallbacksTodayPage from "@/pages/callbacks/today";
+import CallbacksJobsPage from "@/pages/callbacks/jobs";
+import CallbacksJobDetailPage from "@/pages/callbacks/job-detail";
+import CallbacksAuditPage from "@/pages/callbacks/audit";
 import { Loader2 } from "lucide-react";
 
 function LoadingScreen() {
@@ -84,6 +90,20 @@ function CommsPublicRoute({ children }: { children: React.ReactNode }) {
   const { operator, isLoading } = useCommsAuth();
   if (isLoading) return <LoadingScreen />;
   if (operator) return <Redirect to="/comms/jobs" />;
+  return <>{children}</>;
+}
+
+function CallbacksRoute({ children }: { children: React.ReactNode }) {
+  const { operator, isLoading } = useCallbacksAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!operator) return <Redirect to="/callbacks/login" />;
+  return <>{children}</>;
+}
+
+function CallbacksPublicRoute({ children }: { children: React.ReactNode }) {
+  const { operator, isLoading } = useCallbacksAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (operator) return <Redirect to="/callbacks" />;
   return <>{children}</>;
 }
 
@@ -260,6 +280,33 @@ function Router() {
         <Redirect to="/comms/jobs" />
       </Route>
 
+      {/* Callbacks Portal Routes — operator only, never customer-facing */}
+      <Route path="/callbacks/login">
+        <CallbacksPublicRoute>
+          <CallbacksLoginPage />
+        </CallbacksPublicRoute>
+      </Route>
+      <Route path="/callbacks/jobs/:jobId">
+        <CallbacksRoute>
+          <CallbacksJobDetailPage />
+        </CallbacksRoute>
+      </Route>
+      <Route path="/callbacks/jobs">
+        <CallbacksRoute>
+          <CallbacksJobsPage />
+        </CallbacksRoute>
+      </Route>
+      <Route path="/callbacks/audit">
+        <CallbacksRoute>
+          <CallbacksAuditPage />
+        </CallbacksRoute>
+      </Route>
+      <Route path="/callbacks">
+        <CallbacksRoute>
+          <CallbacksTodayPage />
+        </CallbacksRoute>
+      </Route>
+
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
@@ -271,10 +318,12 @@ function App() {
       <ThemeProvider>
         <TooltipProvider>
           <CommsAuthProvider>
-          <AuthProvider>
-            <Router />
-            <Toaster />
-          </AuthProvider>
+            <CallbacksAuthProvider>
+              <AuthProvider>
+                <Router />
+                <Toaster />
+              </AuthProvider>
+            </CallbacksAuthProvider>
           </CommsAuthProvider>
         </TooltipProvider>
       </ThemeProvider>

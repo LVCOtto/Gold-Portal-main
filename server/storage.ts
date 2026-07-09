@@ -480,6 +480,9 @@ export class DatabaseStorage implements IStorage {
     if (patch.canComms !== undefined) {
       update.canComms = patch.canComms;
     }
+    if (patch.canCallbacks !== undefined) {
+      update.canCallbacks = patch.canCallbacks;
+    }
     if (patch.isActive !== undefined) {
       update.isActive = patch.isActive;
     }

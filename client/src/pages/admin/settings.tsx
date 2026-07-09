@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2, MessageSquare, ShieldAlert, Wrench } from "lucide-react";
+import { Loader2, MessageSquare, PhoneCall, ShieldAlert, Wrench } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminLayout } from "@/components/admin-layout";
 import { Switch } from "@/components/ui/switch";
@@ -23,6 +23,7 @@ type InternalAccessUser = {
   canAdmin: boolean;
   canWorkshop: boolean;
   canComms: boolean;
+  canCallbacks: boolean;
   isActive: boolean;
   lastLoginAt: string | null;
 };
@@ -33,6 +34,7 @@ type NewInternalAccessUser = {
   canAdmin: boolean;
   canWorkshop: boolean;
   canComms: boolean;
+  canCallbacks: boolean;
   isActive: boolean;
 };
 
@@ -67,6 +69,7 @@ export default function AdminSettingsPage() {
     canAdmin: false,
     canWorkshop: true,
     canComms: false,
+    canCallbacks: false,
     isActive: true,
   });
 
@@ -107,7 +110,7 @@ export default function AdminSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/internal-access"] });
-      setNewInternalAccessUser({ email: "", displayName: "", canAdmin: false, canWorkshop: true, canComms: false, isActive: true });
+      setNewInternalAccessUser({ email: "", displayName: "", canAdmin: false, canWorkshop: true, canComms: false, canCallbacks: false, isActive: true });
       toast({ title: "Internal access saved", description: "The internal user has been added or updated." });
     },
     onError: (error) => {
@@ -126,6 +129,7 @@ export default function AdminSettingsPage() {
         canAdmin: payload.canAdmin,
         canWorkshop: payload.canWorkshop,
         canComms: payload.canComms,
+        canCallbacks: payload.canCallbacks,
         isActive: payload.isActive,
       });
       return response.json() as Promise<{ user: InternalAccessUser }>;
@@ -315,6 +319,17 @@ export default function AdminSettingsPage() {
                     onCheckedChange={(checked) => setNewInternalAccessUser((current) => ({ ...current, canComms: checked }))}
                   />
                 </div>
+                <div className="flex items-center justify-between gap-4 md:min-w-52">
+                  <div className="flex items-center gap-2">
+                    <PhoneCall className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="new-internal-callbacks">Callbacks</Label>
+                  </div>
+                  <Switch
+                    id="new-internal-callbacks"
+                    checked={newInternalAccessUser.canCallbacks}
+                    onCheckedChange={(checked) => setNewInternalAccessUser((current) => ({ ...current, canCallbacks: checked }))}
+                  />
+                </div>
                 <div className="flex items-center justify-between gap-4 md:min-w-44">
                   <Label htmlFor="new-internal-active">Active</Label>
                   <Switch
@@ -339,7 +354,7 @@ export default function AdminSettingsPage() {
               <div className="space-y-1">
                 <p className="font-medium text-foreground">Current internal users</p>
                 <p className="text-xs text-muted-foreground">
-                  Workshop sign-in: {workshopLoginUrl}. Comms sign-in: /comms/login.
+                  Workshop sign-in: {workshopLoginUrl}. Comms sign-in: /comms/login. Callbacks sign-in: /callbacks/login.
                 </p>
               </div>
 
@@ -403,6 +418,17 @@ export default function AdminSettingsPage() {
                           id={`comms-${user.id}`}
                           checked={user.canComms}
                           onCheckedChange={(checked) => updateDraft(user.id, { canComms: checked })}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-4 md:min-w-52">
+                        <div className="flex items-center gap-2">
+                          <PhoneCall className="h-4 w-4 text-muted-foreground" />
+                          <Label htmlFor={`callbacks-${user.id}`}>Callbacks</Label>
+                        </div>
+                        <Switch
+                          id={`callbacks-${user.id}`}
+                          checked={user.canCallbacks}
+                          onCheckedChange={(checked) => updateDraft(user.id, { canCallbacks: checked })}
                         />
                       </div>
                       <div className="flex items-center justify-between gap-4 md:min-w-44">

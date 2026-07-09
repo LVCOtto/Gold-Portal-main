@@ -17,6 +17,7 @@ import { getDefaultWorkshopLane, isWorkshopLane } from "@shared/schema";
 import { storage } from "./storage";
 import { pool } from "./db";
 import { commsRouter } from "./comms/comms-routes";
+import { callbacksRouter } from "./callbacks/callbacks-routes";
 import { hasInternalAccess, normalizeInternalEmail, resolveInternalAccess } from "./internal-access";
 import { renderBrandedOperationalEmail, WORKSHOP_UPDATE_SENDER } from "./email-branding";
 
@@ -133,6 +134,18 @@ declare module "express-session" {
       requestIp: string;
     };
     commsOperator?: {
+      email: string;
+      loginAt: string;
+    };
+    callbacksOtp?: {
+      email: string;
+      codeHash: string;
+      expiresAt: number;
+      attempts: number;
+      sentAt: number;
+      requestIp: string;
+    };
+    callbacksOperator?: {
       email: string;
       loginAt: string;
     };
@@ -1058,6 +1071,7 @@ export async function registerRoutes(
         displayName: z.string().trim().max(120).optional().or(z.literal("")),
         canWorkshop: z.boolean().default(false),
         canComms: z.boolean().default(false),
+        canCallbacks: z.boolean().default(false),
         isActive: z.boolean().default(true),
       }).safeParse(req.body || {});
 
@@ -1072,6 +1086,7 @@ export async function registerRoutes(
         displayName: parsed.data.displayName || null,
         canWorkshop: parsed.data.canWorkshop,
         canComms: parsed.data.canComms,
+        canCallbacks: parsed.data.canCallbacks,
         isActive: parsed.data.isActive,
       };
 
@@ -1101,6 +1116,7 @@ export async function registerRoutes(
         displayName: z.string().trim().max(120).optional().or(z.literal("")),
         canWorkshop: z.boolean().optional(),
         canComms: z.boolean().optional(),
+        canCallbacks: z.boolean().optional(),
         isActive: z.boolean().optional(),
       }).safeParse(req.body || {});
 
@@ -2603,6 +2619,7 @@ export async function registerRoutes(
 
   // ==================== COMMS QUEUE ====================
   app.use("/api/comms", commsRouter);
+  app.use("/api/callbacks", callbacksRouter);
 
   return httpServer;
 }

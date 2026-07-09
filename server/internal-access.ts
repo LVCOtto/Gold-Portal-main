@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 
-export type InternalPortalScope = "admin" | "workshop" | "comms";
+export type InternalPortalScope = "admin" | "workshop" | "comms" | "callbacks";
 
 export type ResolvedInternalAccess = {
   email: string;
@@ -8,6 +8,7 @@ export type ResolvedInternalAccess = {
   canAdmin: boolean;
   canWorkshop: boolean;
   canComms: boolean;
+  canCallbacks: boolean;
   isActive: boolean;
   source: "database" | "legacy_admin" | "legacy_workshop" | "legacy_comms" | "none";
 };
@@ -34,6 +35,7 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
       canAdmin: !!existing.canAdmin,
       canWorkshop: !!existing.canWorkshop,
       canComms: !!existing.canComms,
+      canCallbacks: !!existing.canCallbacks,
       isActive: !!existing.isActive,
       source: "database",
     };
@@ -47,6 +49,7 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
       canAdmin: true,
       canWorkshop: false,
       canComms: false,
+      canCallbacks: false,
       isActive: true,
       source: "legacy_admin",
     };
@@ -60,6 +63,7 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
       canAdmin: false,
       canWorkshop: true,
       canComms: false,
+      canCallbacks: false,
       isActive: true,
       source: "legacy_workshop",
     };
@@ -72,6 +76,7 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
       canAdmin: false,
       canWorkshop: false,
       canComms: true,
+      canCallbacks: false,
       isActive: true,
       source: "legacy_comms",
     };
@@ -83,6 +88,7 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
     canAdmin: false,
     canWorkshop: false,
     canComms: false,
+    canCallbacks: false,
     isActive: false,
     source: "none",
   };
@@ -94,5 +100,6 @@ export function hasInternalAccess(access: ResolvedInternalAccess, scope: Interna
   }
 
   if (scope === "admin") return access.canAdmin;
-  return scope === "workshop" ? access.canWorkshop : access.canComms;
+  if (scope === "workshop") return access.canWorkshop;
+  return scope === "callbacks" ? access.canCallbacks : access.canComms;
 }

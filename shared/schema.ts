@@ -222,6 +222,7 @@ export const internalAccessUsers = pgTable("internal_access_users", {
   canAdmin: boolean("can_admin").notNull().default(false),
   canWorkshop: boolean("can_workshop").notNull().default(false),
   canComms: boolean("can_comms").notNull().default(false),
+  canCallbacks: boolean("can_callbacks").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -342,6 +343,129 @@ export type AuditEvent = typeof auditEvents.$inferSelect;
 export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
+
+// ─────────────────────────────────────────────
+// CALLBACKS PORTAL SYSTEM
+// ─────────────────────────────────────────────
+
+export const callbackJobSnapshots = pgTable("callback_job_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  externalJobId: text("external_job_id").notNull().unique(),
+  accountCode: text("account_code"),
+  clientName: text("client_name"),
+  siteName: text("site_name"),
+  jobType: text("job_type"),
+  status: text("status"),
+  priority: text("priority"),
+  shortDescription: text("short_description"),
+  engineerName: text("engineer_name"),
+  lastVisitDate: timestamp("last_visit_date"),
+  visitDate: timestamp("visit_date"),
+  nextActionDueDate: timestamp("next_action_due_date"),
+  createdDate: timestamp("created_date"),
+  lastUpdatedDate: timestamp("last_updated_date"),
+  sourcePortalStatus: text("source_portal_status"),
+  rawImportMetadata: text("raw_import_metadata"),
+  importBatchId: varchar("import_batch_id"),
+  lastSyncedAt: timestamp("last_synced_at").defaultNow().notNull(),
+}, (table) => ({
+  externalJobIdIdx: index("callback_snapshot_external_job_id_idx").on(table.externalJobId),
+  accountCodeIdx: index("callback_snapshot_account_code_idx").on(table.accountCode),
+  statusIdx: index("callback_snapshot_status_idx").on(table.status),
+}));
+
+export const callbackJobStates = pgTable("callback_job_states", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  externalJobId: text("external_job_id").notNull().unique(),
+  workflowStatus: text("workflow_status").notNull().default("awaiting_parts"),
+  assignedOperator: text("assigned_operator"),
+  escalationFlag: boolean("escalation_flag").notNull().default(false),
+  escalationReason: text("escalation_reason"),
+  manualAttentionRequired: boolean("manual_attention_required").notNull().default(false),
+  teamTakeoverEligible: boolean("team_takeover_eligible").notNull().default(false),
+  visitDateIsPast: boolean("visit_date_is_past").notNull().default(false),
+  partsEtaDate: timestamp("parts_eta_date"),
+  inferredEtaDate: timestamp("inferred_eta_date"),
+  inferredEtaDerivedAt: timestamp("inferred_eta_derived_at"),
+  lastKnownJobStatus: text("last_known_job_status"),
+  lastCustomerUpdateSentAt: timestamp("last_customer_update_sent_at"),
+  weeklyUpdateDueAt: timestamp("weekly_update_due_at"),
+  consecutiveWeeklyUpdatesWithoutProgress: integer("consecutive_weekly_updates_without_progress").notNull().default(0),
+  lastMeaningfulProgressAt: timestamp("last_meaningful_progress_at"),
+  lastMeaningfulProgressType: text("last_meaningful_progress_type"),
+  lastManualActionAt: timestamp("last_manual_action_at"),
+  lastManualActionBy: text("last_manual_action_by"),
+  internalTags: text("internal_tags"),
+  bookedAt: timestamp("booked_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  externalJobIdIdx: index("callback_state_external_job_id_idx").on(table.externalJobId),
+  workflowStatusIdx: index("callback_state_workflow_status_idx").on(table.workflowStatus),
+  weeklyDueIdx: index("callback_state_weekly_due_idx").on(table.weeklyUpdateDueAt),
+  escalationIdx: index("callback_state_escalation_idx").on(table.escalationFlag),
+}));
+
+export const callbackNotes = pgTable("callback_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  externalJobId: text("external_job_id").notNull(),
+  note: text("note").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  externalJobIdIdx: index("callback_notes_external_job_id_idx").on(table.externalJobId),
+}));
+
+export const callbackActionLog = pgTable("callback_action_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  externalJobId: text("external_job_id").notNull(),
+  actionType: text("action_type").notNull(),
+  performedBy: text("performed_by").notNull(),
+  payload: text("payload"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  externalJobIdIdx: index("callback_action_external_job_id_idx").on(table.externalJobId),
+  actionTypeIdx: index("callback_action_type_idx").on(table.actionType),
+}));
+
+export const callbackEmailTemplates = pgTable("callback_email_templates", {
+  id: varchar("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  routeKey: text("route_key").notNull(),
+  audience: text("audience").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const callbackEmailAudit = pgTable("callback_email_audit", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  externalJobId: text("external_job_id").notNull(),
+  templateId: varchar("template_id"),
+  audience: text("audience").notNull(),
+  recipientEmail: text("recipient_email"),
+  recipientName: text("recipient_name"),
+  renderedSubject: text("rendered_subject"),
+  renderedBody: text("rendered_body"),
+  outcome: text("outcome").notNull(),
+  errorMessage: text("error_message"),
+  triggerType: text("trigger_type").notNull(),
+  operatorId: text("operator_id"),
+  metadata: text("metadata"),
+  queuedAt: timestamp("queued_at"),
+  sentAt: timestamp("sent_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  externalJobIdIdx: index("callback_email_external_job_id_idx").on(table.externalJobId),
+  outcomeIdx: index("callback_email_outcome_idx").on(table.outcome),
+  createdAtIdx: index("callback_email_created_at_idx").on(table.createdAt),
+}));
 
 // ─────────────────────────────────────────────
 // COMMS QUEUE SYSTEM
@@ -492,6 +616,12 @@ export const insertCommsQueueSchema = createInsertSchema(commsQueue).omit({ id: 
 export const insertCommsTemplateVersionSchema = createInsertSchema(commsTemplateVersions).omit({ id: true, changedAt: true });
 export const insertCommsAuditLogSchema = createInsertSchema(commsAuditLog).omit({ id: true, createdAt: true });
 
+export const insertCallbackJobSnapshotSchema = createInsertSchema(callbackJobSnapshots).omit({ id: true, lastSyncedAt: true });
+export const insertCallbackJobStateSchema = createInsertSchema(callbackJobStates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCallbackNoteSchema = createInsertSchema(callbackNotes).omit({ id: true, createdAt: true });
+export const insertCallbackActionLogSchema = createInsertSchema(callbackActionLog).omit({ id: true, createdAt: true });
+export const insertCallbackEmailAuditSchema = createInsertSchema(callbackEmailAudit).omit({ id: true, createdAt: true });
+
 // Comms Types
 export type CommsJobSnapshot = typeof commsJobSnapshots.$inferSelect;
 export type InsertCommsJobSnapshot = z.infer<typeof insertCommsJobSnapshotSchema>;
@@ -506,6 +636,17 @@ export type CommsTemplateVersion = typeof commsTemplateVersions.$inferSelect;
 export type InsertCommsTemplateVersion = z.infer<typeof insertCommsTemplateVersionSchema>;
 export type CommsAuditLogEntry = typeof commsAuditLog.$inferSelect;
 export type InsertCommsAuditLogEntry = z.infer<typeof insertCommsAuditLogSchema>;
+export type CallbackJobSnapshot = typeof callbackJobSnapshots.$inferSelect;
+export type InsertCallbackJobSnapshot = z.infer<typeof insertCallbackJobSnapshotSchema>;
+export type CallbackJobState = typeof callbackJobStates.$inferSelect;
+export type InsertCallbackJobState = z.infer<typeof insertCallbackJobStateSchema>;
+export type CallbackNote = typeof callbackNotes.$inferSelect;
+export type InsertCallbackNote = z.infer<typeof insertCallbackNoteSchema>;
+export type CallbackActionLogEntry = typeof callbackActionLog.$inferSelect;
+export type InsertCallbackActionLogEntry = z.infer<typeof insertCallbackActionLogSchema>;
+export type CallbackEmailTemplate = typeof callbackEmailTemplates.$inferSelect;
+export type CallbackEmailAuditEntry = typeof callbackEmailAudit.$inferSelect;
+export type InsertCallbackEmailAuditEntry = z.infer<typeof insertCallbackEmailAuditSchema>;
 
 export const WORKSHOP_LANES = [
   "entry",
