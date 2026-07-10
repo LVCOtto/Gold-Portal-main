@@ -17,6 +17,15 @@ export function normalizeInternalEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+function isMissingCanCallbacksColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const maybe = error as { code?: string; message?: string };
+  return maybe.code === "42703" && (maybe.message || "").toLowerCase().includes("can_callbacks");
+}
+
 function getLegacyCommsAllowedEmails(): string[] {
   return (process.env.COMMS_ALLOWED_EMAILS || process.env.ADMIN_EMAIL || "")
     .split(",")
@@ -26,7 +35,18 @@ function getLegacyCommsAllowedEmails(): string[] {
 
 export async function resolveInternalAccess(email: string): Promise<ResolvedInternalAccess> {
   const normalizedEmail = normalizeInternalEmail(email);
-  const existing = await storage.getInternalAccessUserByEmail(normalizedEmail);
+  let existing: Awaited<ReturnType<typeof storage.getInternalAccessUserByEmail>>;
+
+  try {
+    existing = await storage.getInternalAccessUserByEmail(normalizedEmail);
+  } catch (error) {
+    // Temporary compatibility fallback during rollout where app code can include
+    // can_callbacks before the database column exists.
+    if (!isMissingCanCallbacksColumnError(error)) {
+      throw error;
+    }
+    existing = undefined;
+  }
 
   if (existing) {
     return {
