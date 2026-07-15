@@ -400,6 +400,17 @@ export default function AdminSettingsPage() {
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-8">
                       <div className="flex items-center justify-between gap-4 md:min-w-52">
                         <div className="flex items-center gap-2">
+                          <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+                          <Label htmlFor={`admin-${user.id}`}>Admin</Label>
+                        </div>
+                        <Switch
+                          id={`admin-${user.id}`}
+                          checked={user.canAdmin}
+                          onCheckedChange={(checked) => updateDraft(user.id, { canAdmin: checked })}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-4 md:min-w-52">
+                        <div className="flex items-center gap-2">
                           <Wrench className="h-4 w-4 text-muted-foreground" />
                           <Label htmlFor={`workshop-${user.id}`}>Workshop</Label>
                         </div>

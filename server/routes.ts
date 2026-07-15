@@ -467,6 +467,32 @@ function clientIp(req: Request): string {
   return ip;
 }
 
+function isInternalAccessSchemaError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const maybe = error as { code?: string; message?: string };
+  const code = maybe.code || "";
+  const message = (maybe.message || "").toLowerCase();
+
+  if (code === "42P01" && message.includes("internal_access_users")) {
+    return true;
+  }
+
+  if (code !== "42703") {
+    return false;
+  }
+
+  return ["can_admin", "can_workshop", "can_comms", "can_callbacks", "is_active", "display_name"].some((column) =>
+    message.includes(column),
+  );
+}
+
+function internalAccessSchemaErrorMessage(): string {
+  return "Internal access database schema is out of date. Run `npm run db:push` for this environment and redeploy.";
+}
+
 async function audit(
   req: Request,
   action: string,
@@ -1060,6 +1086,9 @@ export async function registerRoutes(
       res.json({ users });
     } catch (error) {
       console.error("Internal access fetch error:", error);
+      if (isInternalAccessSchemaError(error)) {
+        return res.status(500).json({ message: internalAccessSchemaErrorMessage() });
+      }
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -1069,6 +1098,7 @@ export async function registerRoutes(
       const parsed = z.object({
         email: z.string().trim().email("Enter a valid email address"),
         displayName: z.string().trim().max(120).optional().or(z.literal("")),
+        canAdmin: z.boolean().default(false),
         canWorkshop: z.boolean().default(false),
         canComms: z.boolean().default(false),
         canCallbacks: z.boolean().default(false),
@@ -1084,6 +1114,7 @@ export async function registerRoutes(
       const payload = {
         email: normalizedEmail,
         displayName: parsed.data.displayName || null,
+        canAdmin: parsed.data.canAdmin,
         canWorkshop: parsed.data.canWorkshop,
         canComms: parsed.data.canComms,
         canCallbacks: parsed.data.canCallbacks,
@@ -1105,6 +1136,9 @@ export async function registerRoutes(
       res.json({ user });
     } catch (error) {
       console.error("Internal access create error:", error);
+      if (isInternalAccessSchemaError(error)) {
+        return res.status(500).json({ message: internalAccessSchemaErrorMessage() });
+      }
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -1114,6 +1148,7 @@ export async function registerRoutes(
       const parsed = z.object({
         email: z.string().trim().email("Enter a valid email address").optional(),
         displayName: z.string().trim().max(120).optional().or(z.literal("")),
+        canAdmin: z.boolean().optional(),
         canWorkshop: z.boolean().optional(),
         canComms: z.boolean().optional(),
         canCallbacks: z.boolean().optional(),
@@ -1146,6 +1181,9 @@ export async function registerRoutes(
       res.json({ user });
     } catch (error) {
       console.error("Internal access update error:", error);
+      if (isInternalAccessSchemaError(error)) {
+        return res.status(500).json({ message: internalAccessSchemaErrorMessage() });
+      }
       res.status(500).json({ message: "Internal server error" });
     }
   });
