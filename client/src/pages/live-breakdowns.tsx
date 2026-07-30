@@ -88,7 +88,7 @@ export default function LiveBreakdownsPage() {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       toast({
-        title: "Daily link copied",
+        title: "Weekly link copied",
         description: "The current engineer share link is now on your clipboard.",
       });
     } catch {
@@ -134,7 +134,7 @@ export default function LiveBreakdownsPage() {
               {!token ? (
                 <Button variant="outline" className="flex-1 sm:flex-none" onClick={copyPublicLink} data-testid="button-copy-public-link">
                   {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-                  {copied ? "Copied" : "Copy daily link"}
+                  {copied ? "Copied" : "Copy weekly link"}
                 </Button>
               ) : null}
               <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => refetch()} data-testid="button-refresh-breakdowns">

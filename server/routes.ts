@@ -616,15 +616,24 @@ function requireAuth(type?: "customer" | "admin" | "workshop" | Array<"customer"
   };
 }
 
-function getLiveBreakdownsDailyToken(date = new Date()): string {
-  const dayStamp = date.toISOString().slice(0, 10);
+function getLiveBreakdownsWeekAnchor(date = new Date()): string {
+  const currentDate = new Date(date);
+  const dayOfWeek = currentDate.getDay();
+  const daysSinceSaturday = dayOfWeek === 6 ? 0 : dayOfWeek + 1;
+  currentDate.setDate(currentDate.getDate() - daysSinceSaturday);
+  currentDate.setHours(0, 0, 0, 0);
+  return currentDate.toISOString().slice(0, 10);
+}
+
+function getLiveBreakdownsWeeklyToken(date = new Date()): string {
+  const weekAnchor = getLiveBreakdownsWeekAnchor(date);
   const secret = (process.env.SESSION_SECRET || "").trim();
-  return crypto.createHmac("sha256", secret).update(`live-breakdowns:${dayStamp}`).digest("hex");
+  return crypto.createHmac("sha256", secret).update(`live-breakdowns:week:${weekAnchor}`).digest("hex");
 }
 
 function isValidLiveBreakdownsToken(token: string | undefined): boolean {
   if (!token) return false;
-  return token === getLiveBreakdownsDailyToken();
+  return token === getLiveBreakdownsWeeklyToken();
 }
 
 // Get account code from session (for customer routes)
@@ -1379,7 +1388,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/admin/live-breakdowns/share-link", requireAuth("admin"), (req, res) => {
-    const token = getLiveBreakdownsDailyToken();
+    const token = getLiveBreakdownsWeeklyToken();
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     res.setHeader("Cache-Control", "no-store");
     res.json({
