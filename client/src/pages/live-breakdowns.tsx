@@ -92,32 +92,32 @@ export default function LiveBreakdownsPage() {
       <header className="border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start gap-3 sm:gap-4">
               <Link href="/" className="shrink-0">
-                <img src={lvcLogo} alt="LVC UK" className="h-9" />
+                <img src={lvcLogo} alt="LVC UK" className="h-8 sm:h-9" />
               </Link>
-              <div>
+              <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl font-semibold tracking-tight">Live Breakdown Board</h1>
+                  <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Live Breakdown Board</h1>
                   <Badge variant="secondary" className="gap-1.5">
                     <Radio className="h-3.5 w-3.5" />
                     Public view
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">
+                <p className="mt-1 text-sm text-muted-foreground leading-5">
                   Read-only live feed of jobs with a breakdown job type and a status of Pending Engineer Visit or Processing.
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-stretch gap-2 sm:justify-end">
               {!token ? (
-                <Button variant="outline" onClick={copyPublicLink} data-testid="button-copy-public-link">
+                <Button variant="outline" className="flex-1 sm:flex-none" onClick={copyPublicLink} data-testid="button-copy-public-link">
                   {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
                   {copied ? "Copied" : "Copy daily link"}
                 </Button>
               ) : null}
-              <Button variant="outline" onClick={() => refetch()} data-testid="button-refresh-breakdowns">
+              <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => refetch()} data-testid="button-refresh-breakdowns">
                 <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
@@ -126,8 +126,8 @@ export default function LiveBreakdownsPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div className="grid gap-4 md:grid-cols-3">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Card className="border-slate-200/70 shadow-sm">
             <CardHeader className="pb-2">
               <CardDescription>Total breakdown jobs</CardDescription>
@@ -186,39 +186,40 @@ export default function LiveBreakdownsPage() {
                 <p className="mt-1 text-sm">Jobs will appear here when they have a Breakdown job type and a matching live status.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto pb-2">
+                <table className="w-full min-w-[840px] text-sm">
                   <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>
-                      <th className="px-6 py-4 text-left font-medium">Job</th>
-                      <th className="px-6 py-4 text-left font-medium">Account</th>
-                      <th className="px-6 py-4 text-left font-medium">Site</th>
-                      <th className="px-6 py-4 text-left font-medium">Job Type</th>
-                      <th className="px-6 py-4 text-left font-medium">Status</th>
-                      <th className="px-6 py-4 text-left font-medium">Engineer</th>
-                      <th className="px-6 py-4 text-left font-medium">Navigate</th>
-                      <th className="px-6 py-4 text-left font-medium">Updated</th>
+                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Job</th>
+                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Account</th>
+                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium min-w-[14rem]">Site</th>
+                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Job Type</th>
+                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Status</th>
+                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Engineer</th>
+                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Navigate</th>
+                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Updated</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {data?.jobs.map((job) => (
                       <tr key={job.id} className="hover:bg-slate-50/70 transition-colors" data-testid={`row-breakdown-${job.jobId}`}>
-                        <td className="px-6 py-4 font-medium whitespace-nowrap">{job.jobId}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-muted-foreground">{job.accountCode}</td>
-                        <td className="px-6 py-4 min-w-[18rem]">
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 font-medium whitespace-nowrap">{job.jobId}</td>
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.accountCode}</td>
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 min-w-[14rem] align-top">
                           <div className="font-medium text-foreground">{job.siteName}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5 truncate">{job.shortDescription}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5 break-words">{job.shortDescription}</div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-muted-foreground">{job.jobType || "—"}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.jobType || "—"}</td>
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap">
                           <StatusBadge status={job.status} />
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-muted-foreground">{job.engineerName || "—"}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.engineerName || "—"}</td>
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap">
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
+                            className="w-full sm:w-auto"
                             onClick={() => openMapsForJob(job)}
                             disabled={!extractPostcode(job.siteName)}
                           >
@@ -226,7 +227,7 @@ export default function LiveBreakdownsPage() {
                             Navigate
                           </Button>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-muted-foreground">{formatDateTime(job.lastUpdatedDate)}</td>
+                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{formatDateTime(job.lastUpdatedDate)}</td>
                       </tr>
                     ))}
                   </tbody>
