@@ -39,7 +39,13 @@ function isVisitOverdue(value: string | Date | null | undefined): boolean {
   if (!value) return false;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return false;
-  return date.getTime() < Date.now();
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const comparisonDate = new Date(date);
+  comparisonDate.setHours(0, 0, 0, 0);
+
+  return comparisonDate < today;
 }
 
 function getStatusSummary(jobs: LiveBreakdownJob[]) {
@@ -98,7 +104,7 @@ export default function LiveBreakdownsPage() {
     const postcode = extractPostcode(job.siteName);
     const destination = postcode || job.siteName || "";
     if (!destination) return;
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`, "_blank", "noopener,noreferrer");
+    window.open(`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${encodeURIComponent(destination)}`, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -200,57 +206,114 @@ export default function LiveBreakdownsPage() {
                 <p className="mt-1 text-sm">Jobs will appear here when they have a Breakdown job type and a matching live status.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto pb-2">
-                <table className="w-full min-w-[840px] text-sm">
-                  <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Job</th>
-                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Account</th>
-                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium min-w-[14rem]">Site</th>
-                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Job Type</th>
-                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Status</th>
-                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Engineer</th>
-                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Navigate</th>
-                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Visit date</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {data?.jobs.map((job) => {
-                      const overdue = isVisitOverdue(job.visitDate);
-                      return (
-                      <tr key={job.id} className={`${overdue ? "bg-rose-50/80 text-rose-700" : "hover:bg-slate-50/70 transition-colors"}`} data-testid={`row-breakdown-${job.jobId}`}>
-                        <td className="px-3 py-3 sm:px-6 sm:py-4 font-medium whitespace-nowrap">{job.jobId}</td>
-                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.accountCode}</td>
-                        <td className="px-3 py-3 sm:px-6 sm:py-4 min-w-[14rem] align-top">
-                          <div className="font-medium text-foreground">{job.siteName}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5 break-words">{job.shortDescription}</div>
-                        </td>
-                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.jobType || "—"}</td>
-                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap">
-                          <StatusBadge status={job.status} />
-                        </td>
-                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.engineerName || "—"}</td>
-                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap">
+              <div className="pb-2">
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full min-w-[860px] text-sm">
+                    <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Job</th>
+                        <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Account</th>
+                        <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium min-w-[14rem]">Site</th>
+                        <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Job Type</th>
+                        <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Status</th>
+                        <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Engineer</th>
+                        <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Navigate</th>
+                        <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Visit date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {data?.jobs.map((job) => {
+                        const overdue = isVisitOverdue(job.visitDate);
+                        return (
+                          <tr key={job.id} className={`${overdue ? "bg-rose-50/80 text-rose-700" : "hover:bg-slate-50/70 transition-colors"}`} data-testid={`row-breakdown-${job.jobId}`}>
+                            <td className="px-3 py-3 sm:px-6 sm:py-4 font-medium whitespace-nowrap">{job.jobId}</td>
+                            <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.accountCode}</td>
+                            <td className="px-3 py-3 sm:px-6 sm:py-4 min-w-[14rem] align-top">
+                              <div className="font-medium text-foreground">{job.siteName}</div>
+                              <div className="text-xs text-muted-foreground mt-0.5 break-words">{job.shortDescription}</div>
+                            </td>
+                            <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.jobType || "—"}</td>
+                            <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap">
+                              <StatusBadge status={job.status} />
+                            </td>
+                            <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.engineerName || "—"}</td>
+                            <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="w-full min-h-[40px] sm:w-auto"
+                                onClick={() => openMapsForJob(job)}
+                                disabled={!extractPostcode(job.siteName)}
+                              >
+                                <MapPinned className="mr-2 h-4 w-4" />
+                                Navigate
+                              </Button>
+                            </td>
+                            <td className={`px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap ${overdue ? "text-rose-700 font-medium" : "text-muted-foreground"}`}>
+                              {formatVisitDate(job.visitDate)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="space-y-3 p-3 sm:hidden">
+                  {data?.jobs.map((job) => {
+                    const overdue = isVisitOverdue(job.visitDate);
+                    return (
+                      <div
+                        key={job.id}
+                        className={`rounded-xl border p-4 shadow-sm ${overdue ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-white"}`}
+                        data-testid={`row-breakdown-${job.jobId}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-foreground">{job.jobId}</span>
+                              {overdue ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-rose-700">Overdue</span> : null}
+                            </div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{job.siteName}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">{job.accountCode}</div>
+                          </div>
+                          <div className="shrink-0">
+                            <StatusBadge status={job.status} />
+                          </div>
+                        </div>
+
+                        <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-foreground">Job type</span>
+                            <span>{job.jobType || "—"}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-foreground">Engineer</span>
+                            <span>{job.engineerName || "—"}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-foreground">Visit date</span>
+                            <span className={overdue ? "font-medium text-rose-700" : ""}>{formatVisitDate(job.visitDate)}</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-4">
                           <Button
                             type="button"
                             variant="outline"
-                            size="sm"
-                            className="w-full sm:w-auto"
+                            className="w-full min-h-[44px]"
                             onClick={() => openMapsForJob(job)}
                             disabled={!extractPostcode(job.siteName)}
                           >
                             <MapPinned className="mr-2 h-4 w-4" />
                             Navigate
                           </Button>
-                        </td>
-                        <td className={`px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap ${overdue ? "text-rose-700 font-medium" : "text-muted-foreground"}`}>
-                          {formatVisitDate(job.visitDate)}
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </CardContent>
