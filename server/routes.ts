@@ -616,6 +616,17 @@ function requireAuth(type?: "customer" | "admin" | "workshop" | Array<"customer"
   };
 }
 
+function getLiveBreakdownsDailyToken(date = new Date()): string {
+  const dayStamp = date.toISOString().slice(0, 10);
+  const secret = (process.env.SESSION_SECRET || "").trim();
+  return crypto.createHmac("sha256", secret).update(`live-breakdowns:${dayStamp}`).digest("hex");
+}
+
+function isValidLiveBreakdownsToken(token: string | undefined): boolean {
+  if (!token) return false;
+  return token === getLiveBreakdownsDailyToken();
+}
+
 // Get account code from session (for customer routes)
 function getAccountCode(req: Request): string | null {
   return req.session.user?.type === "customer" ? req.session.user.accountCode ?? null : null;
@@ -1344,8 +1355,16 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/public/live-breakdowns", async (_req, res) => {
+  app.get("/api/public/live-breakdowns", async (req, res) => {
     try {
+      const token = typeof req.query.token === "string" ? req.query.token : undefined;
+      const isAdminSession = req.session.user?.type === "admin";
+      const tokenValid = isValidLiveBreakdownsToken(token);
+
+      if (!isAdminSession && !tokenValid) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
       const jobs = await storage.getLiveBreakdownJobs();
       res.setHeader("Cache-Control", "no-store");
       res.json({
@@ -1357,6 +1376,16 @@ export async function registerRoutes(
       console.error("Live breakdown jobs fetch error:", error);
       res.status(500).json({ message: "Internal server error" });
     }
+  });
+
+  app.get("/api/admin/live-breakdowns/share-link", requireAuth("admin"), (req, res) => {
+    const token = getLiveBreakdownsDailyToken();
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      token,
+      shareUrl: `${baseUrl}/live-breakdowns/${token}`,
+    });
   });
 
   // ==================== QUOTES ROUTES ====================

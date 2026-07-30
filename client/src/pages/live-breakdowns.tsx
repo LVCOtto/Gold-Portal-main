@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useParams } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { ArrowLeft, Check, Copy, RefreshCw, Radio, Clock3, Wrench } from "lucide-react";
+import { ArrowLeft, Check, Copy, RefreshCw, Radio, Clock3, Wrench, MapPinned } from "lucide-react";
 import lvcLogo from "@assets/logo.png";
 import type { Job } from "@shared/schema";
 
@@ -33,12 +34,20 @@ function getStatusSummary(jobs: LiveBreakdownJob[]) {
   return { pendingEngineerVisit, processing };
 }
 
+function extractPostcode(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const match = value.match(/\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i);
+  return match?.[1] ? match[1].toUpperCase() : null;
+}
+
 export default function LiveBreakdownsPage() {
   const { toast } = useToast();
+  const params = useParams<{ token?: string }>();
   const [copied, setCopied] = useState(false);
+  const token = params?.token;
 
   const { data, isLoading, isFetching, error, refetch } = useQuery<LiveBreakdownResponse>({
-    queryKey: ["/api/public/live-breakdowns"],
+    queryKey: ["/api/public/live-breakdowns", token ? { token } : undefined],
     refetchInterval: 15000,
     refetchIntervalInBackground: true,
   });
@@ -53,11 +62,14 @@ export default function LiveBreakdownsPage() {
 
   async function copyPublicLink() {
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      const response = await apiRequest("GET", "/api/admin/live-breakdowns/share-link");
+      const payload = await response.json() as { shareUrl?: string };
+      const shareUrl = payload.shareUrl || window.location.href;
+      await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       toast({
-        title: "Link copied",
-        description: "The public breakdown board URL is now on your clipboard.",
+        title: "Daily link copied",
+        description: "The current engineer share link is now on your clipboard.",
       });
     } catch {
       toast({
@@ -66,6 +78,13 @@ export default function LiveBreakdownsPage() {
         variant: "destructive",
       });
     }
+  }
+
+  function openMapsForJob(job: LiveBreakdownJob) {
+    const postcode = extractPostcode(job.siteName);
+    const destination = postcode || job.siteName || "";
+    if (!destination) return;
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -92,10 +111,12 @@ export default function LiveBreakdownsPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" onClick={copyPublicLink} data-testid="button-copy-public-link">
-                {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-                {copied ? "Copied" : "Copy link"}
-              </Button>
+              {!token ? (
+                <Button variant="outline" onClick={copyPublicLink} data-testid="button-copy-public-link">
+                  {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                  {copied ? "Copied" : "Copy daily link"}
+                </Button>
+              ) : null}
               <Button variant="outline" onClick={() => refetch()} data-testid="button-refresh-breakdowns">
                 <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
                 Refresh
@@ -175,6 +196,7 @@ export default function LiveBreakdownsPage() {
                       <th className="px-6 py-4 text-left font-medium">Job Type</th>
                       <th className="px-6 py-4 text-left font-medium">Status</th>
                       <th className="px-6 py-4 text-left font-medium">Engineer</th>
+                      <th className="px-6 py-4 text-left font-medium">Navigate</th>
                       <th className="px-6 py-4 text-left font-medium">Updated</th>
                     </tr>
                   </thead>
@@ -192,6 +214,18 @@ export default function LiveBreakdownsPage() {
                           <StatusBadge status={job.status} />
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-muted-foreground">{job.engineerName || "—"}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openMapsForJob(job)}
+                            disabled={!extractPostcode(job.siteName)}
+                          >
+                            <MapPinned className="mr-2 h-4 w-4" />
+                            Navigate
+                          </Button>
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-muted-foreground">{formatDateTime(job.lastUpdatedDate)}</td>
                       </tr>
                     ))}

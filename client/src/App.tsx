@@ -175,12 +175,22 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      {/* Public live breakdown board */}
-      <Route path="/live-breakdowns">
+      {/* Live breakdown board */}
+      <Route path="/live-breakdowns/:token">
         <LiveBreakdownsPage />
       </Route>
-      <Route path="/breakdowns">
+      <Route path="/breakdowns/:token">
         <LiveBreakdownsPage />
+      </Route>
+      <Route path="/live-breakdowns">
+        <ProtectedRoute requiredTypes={["admin"]}>
+          <LiveBreakdownsPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/breakdowns">
+        <ProtectedRoute requiredTypes={["admin"]}>
+          <LiveBreakdownsPage />
+        </ProtectedRoute>
       </Route>
 
       {/* Admin Routes */}
