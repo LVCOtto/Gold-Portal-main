@@ -28,6 +28,20 @@ function formatDateTime(value: string | Date | null | undefined): string {
   return format(date, "d MMM yyyy, HH:mm");
 }
 
+function formatVisitDate(value: string | Date | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return format(date, "d MMM yyyy");
+}
+
+function isVisitOverdue(value: string | Date | null | undefined): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getTime() < Date.now();
+}
+
 function getStatusSummary(jobs: LiveBreakdownJob[]) {
   const pendingEngineerVisit = jobs.filter((job) => job.status?.toLowerCase().includes("pending engineer visit")).length;
   const processing = jobs.filter((job) => job.status?.toLowerCase().includes("processing")).length;
@@ -197,12 +211,14 @@ export default function LiveBreakdownsPage() {
                       <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Status</th>
                       <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Engineer</th>
                       <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Navigate</th>
-                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Updated</th>
+                      <th className="px-3 py-3 sm:px-6 sm:py-4 text-left font-medium">Visit date</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {data?.jobs.map((job) => (
-                      <tr key={job.id} className="hover:bg-slate-50/70 transition-colors" data-testid={`row-breakdown-${job.jobId}`}>
+                    {data?.jobs.map((job) => {
+                      const overdue = isVisitOverdue(job.visitDate);
+                      return (
+                      <tr key={job.id} className={`${overdue ? "bg-rose-50/80 text-rose-700" : "hover:bg-slate-50/70 transition-colors"}`} data-testid={`row-breakdown-${job.jobId}`}>
                         <td className="px-3 py-3 sm:px-6 sm:py-4 font-medium whitespace-nowrap">{job.jobId}</td>
                         <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.accountCode}</td>
                         <td className="px-3 py-3 sm:px-6 sm:py-4 min-w-[14rem] align-top">
@@ -227,9 +243,12 @@ export default function LiveBreakdownsPage() {
                             Navigate
                           </Button>
                         </td>
-                        <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{formatDateTime(job.lastUpdatedDate)}</td>
+                        <td className={`px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap ${overdue ? "text-rose-700 font-medium" : "text-muted-foreground"}`}>
+                          {formatVisitDate(job.visitDate)}
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

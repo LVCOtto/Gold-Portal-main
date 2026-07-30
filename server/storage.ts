@@ -16,7 +16,7 @@ import {
   getDefaultWorkshopLane,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, ilike, desc, asc, sql, gte, isNull, inArray } from "drizzle-orm";
+import { eq, and, or, ilike, desc, asc, sql, gte, isNull, inArray, not } from "drizzle-orm";
 
 function isUndefinedTableError(error: unknown): error is { code: string } {
   return !!error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "42P01";
@@ -236,10 +236,13 @@ export class DatabaseStorage implements IStorage {
   async getLiveBreakdownJobs(): Promise<Job[]> {
     const conditions = [
       ilike(jobs.jobType, "%Breakdown%"),
-      or(
-        ilike(jobs.status, "%Pending Engineer Visit%"),
-        ilike(jobs.status, "%Processing%")
-      )!,
+      and(
+        or(
+          ilike(jobs.status, "%Pending Engineer Visit%"),
+          ilike(jobs.status, "%Processing%")
+        )!,
+        not(ilike(jobs.status, "%Attended - In Processing%"))
+      ),
     ];
 
     return db.select().from(jobs)
