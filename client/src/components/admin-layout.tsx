@@ -2,7 +2,7 @@ import { type ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   Menu, LogOut, Users, 
-  LayoutDashboard, ChevronLeft, Settings, ExternalLink, Workflow, MessagesSquare, Radio, PhoneCall
+  LayoutDashboard, ChevronLeft, Settings, ExternalLink, Workflow, MessagesSquare, Radio, PhoneCall, HardHat
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -23,6 +23,7 @@ const navItems = [
   { href: "/breakdowns", label: "Breakdowns", icon: Radio },
   { href: "/comms/jobs", label: "Comms", icon: MessagesSquare },
   { href: "/callbacks", label: "Callbacks", icon: PhoneCall },
+  { href: "/engineers/login", label: "Engineer Hub", icon: HardHat },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
