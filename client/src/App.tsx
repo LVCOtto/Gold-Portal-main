@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { CommsAuthProvider, useCommsAuth } from "@/lib/comms-auth";
 import { CallbacksAuthProvider, useCallbacksAuth } from "@/lib/callbacks-auth";
+import { EngineerAuthProvider, useEngineerAuth } from "@/lib/engineer-auth";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import AdminLoginPage from "@/pages/admin-login";
@@ -33,6 +34,8 @@ import CallbacksTodayPage from "@/pages/callbacks/today";
 import CallbacksJobsPage from "@/pages/callbacks/jobs";
 import CallbacksJobDetailPage from "@/pages/callbacks/job-detail";
 import CallbacksAuditPage from "@/pages/callbacks/audit";
+import EngineerLoginPage from "@/pages/engineers/login";
+import EngineersHubPage from "@/pages/engineers/hub";
 import { Loader2 } from "lucide-react";
 
 function LoadingScreen() {
@@ -104,6 +107,20 @@ function CallbacksPublicRoute({ children }: { children: React.ReactNode }) {
   const { operator, isLoading } = useCallbacksAuth();
   if (isLoading) return <LoadingScreen />;
   if (operator) return <Redirect to="/callbacks" />;
+  return <>{children}</>;
+}
+
+function EngineerRoute({ children }: { children: React.ReactNode }) {
+  const { operator, isLoading } = useEngineerAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!operator) return <Redirect to="/engineers/login" />;
+  return <>{children}</>;
+}
+
+function EngineerPublicRoute({ children }: { children: React.ReactNode }) {
+  const { operator, isLoading } = useEngineerAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (operator) return <Redirect to="/engineers" />;
   return <>{children}</>;
 }
 
@@ -317,6 +334,18 @@ function Router() {
         </CallbacksRoute>
       </Route>
 
+      {/* Engineer Hub Routes */}
+      <Route path="/engineers/login">
+        <EngineerPublicRoute>
+          <EngineerLoginPage />
+        </EngineerPublicRoute>
+      </Route>
+      <Route path="/engineers">
+        <EngineerRoute>
+          <EngineersHubPage />
+        </EngineerRoute>
+      </Route>
+
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
@@ -327,14 +356,16 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>
-          <CommsAuthProvider>
-            <CallbacksAuthProvider>
-              <AuthProvider>
-                <Router />
-                <Toaster />
-              </AuthProvider>
-            </CallbacksAuthProvider>
-          </CommsAuthProvider>
+          <EngineerAuthProvider>
+            <CommsAuthProvider>
+              <CallbacksAuthProvider>
+                <AuthProvider>
+                  <Router />
+                  <Toaster />
+                </AuthProvider>
+              </CallbacksAuthProvider>
+            </CommsAuthProvider>
+          </EngineerAuthProvider>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>

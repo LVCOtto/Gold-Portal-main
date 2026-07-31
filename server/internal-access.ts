@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 
-export type InternalPortalScope = "admin" | "workshop" | "comms" | "callbacks";
+export type InternalPortalScope = "admin" | "workshop" | "comms" | "callbacks" | "engineer";
 
 export type ResolvedInternalAccess = {
   email: string;
@@ -9,6 +9,7 @@ export type ResolvedInternalAccess = {
   canWorkshop: boolean;
   canComms: boolean;
   canCallbacks: boolean;
+  canEngineer: boolean;
   isActive: boolean;
   source: "database" | "legacy_admin" | "legacy_workshop" | "legacy_comms" | "none";
 };
@@ -17,13 +18,18 @@ export function normalizeInternalEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function isMissingCanCallbacksColumnError(error: unknown): boolean {
+function isMissingPortalColumnError(error: unknown): boolean {
   if (!error || typeof error !== "object") {
     return false;
   }
 
   const maybe = error as { code?: string; message?: string };
-  return maybe.code === "42703" && (maybe.message || "").toLowerCase().includes("can_callbacks");
+  if (maybe.code !== "42703") {
+    return false;
+  }
+
+  const message = (maybe.message || "").toLowerCase();
+  return message.includes("can_callbacks") || message.includes("can_engineer");
 }
 
 function getLegacyCommsAllowedEmails(): string[] {
@@ -41,8 +47,8 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
     existing = await storage.getInternalAccessUserByEmail(normalizedEmail);
   } catch (error) {
     // Temporary compatibility fallback during rollout where app code can include
-    // can_callbacks before the database column exists.
-    if (!isMissingCanCallbacksColumnError(error)) {
+    // can_callbacks/can_engineer before the database columns exist.
+    if (!isMissingPortalColumnError(error)) {
       throw error;
     }
     existing = undefined;
@@ -56,6 +62,7 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
       canWorkshop: !!existing.canWorkshop,
       canComms: !!existing.canComms,
       canCallbacks: !!existing.canCallbacks,
+      canEngineer: !!existing.canEngineer,
       isActive: !!existing.isActive,
       source: "database",
     };
@@ -70,6 +77,7 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
       canWorkshop: false,
       canComms: false,
       canCallbacks: false,
+      canEngineer: false,
       isActive: true,
       source: "legacy_admin",
     };
@@ -84,6 +92,7 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
       canWorkshop: true,
       canComms: false,
       canCallbacks: false,
+      canEngineer: false,
       isActive: true,
       source: "legacy_workshop",
     };
@@ -97,6 +106,7 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
       canWorkshop: false,
       canComms: true,
       canCallbacks: false,
+      canEngineer: false,
       isActive: true,
       source: "legacy_comms",
     };
@@ -109,6 +119,7 @@ export async function resolveInternalAccess(email: string): Promise<ResolvedInte
     canWorkshop: false,
     canComms: false,
     canCallbacks: false,
+    canEngineer: false,
     isActive: false,
     source: "none",
   };
@@ -121,5 +132,7 @@ export function hasInternalAccess(access: ResolvedInternalAccess, scope: Interna
 
   if (scope === "admin") return access.canAdmin;
   if (scope === "workshop") return access.canWorkshop;
-  return scope === "callbacks" ? access.canCallbacks : access.canComms;
+  if (scope === "callbacks") return access.canCallbacks;
+  if (scope === "engineer") return access.canEngineer;
+  return access.canComms;
 }

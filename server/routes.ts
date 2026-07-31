@@ -18,6 +18,7 @@ import { storage } from "./storage";
 import { pool } from "./db";
 import { commsRouter } from "./comms/comms-routes";
 import { callbacksRouter } from "./callbacks/callbacks-routes";
+import { engineersRouter } from "./engineers/engineers-routes";
 import { hasInternalAccess, normalizeInternalEmail, resolveInternalAccess } from "./internal-access";
 import { renderBrandedOperationalEmail, WORKSHOP_UPDATE_SENDER } from "./email-branding";
 
@@ -148,6 +149,20 @@ declare module "express-session" {
     callbacksOperator?: {
       email: string;
       loginAt: string;
+    };
+    engineerOtp?: {
+      email: string;
+      codeHash: string;
+      expiresAt: number;
+      attempts: number;
+      sentAt: number;
+      requestIp: string;
+    };
+    engineerOperator?: {
+      email: string;
+      loginAt: string;
+      displayName: string;
+      engineerNames: string[];
     };
   }
 }
@@ -484,7 +499,7 @@ function isInternalAccessSchemaError(error: unknown): boolean {
     return false;
   }
 
-  return ["can_admin", "can_workshop", "can_comms", "can_callbacks", "is_active", "display_name"].some((column) =>
+  return ["can_admin", "can_workshop", "can_comms", "can_callbacks", "can_engineer", "is_active", "display_name"].some((column) =>
     message.includes(column),
   );
 }
@@ -1126,6 +1141,7 @@ export async function registerRoutes(
         canWorkshop: z.boolean().default(false),
         canComms: z.boolean().default(false),
         canCallbacks: z.boolean().default(false),
+        canEngineer: z.boolean().default(false),
         isActive: z.boolean().default(true),
       }).safeParse(req.body || {});
 
@@ -1142,6 +1158,7 @@ export async function registerRoutes(
         canWorkshop: parsed.data.canWorkshop,
         canComms: parsed.data.canComms,
         canCallbacks: parsed.data.canCallbacks,
+        canEngineer: parsed.data.canEngineer,
         isActive: parsed.data.isActive,
       };
 
@@ -1176,6 +1193,7 @@ export async function registerRoutes(
         canWorkshop: z.boolean().optional(),
         canComms: z.boolean().optional(),
         canCallbacks: z.boolean().optional(),
+        canEngineer: z.boolean().optional(),
         isActive: z.boolean().optional(),
       }).safeParse(req.body || {});
 
@@ -2700,6 +2718,7 @@ export async function registerRoutes(
   // ==================== COMMS QUEUE ====================
   app.use("/api/comms", commsRouter);
   app.use("/api/callbacks", callbacksRouter);
+  app.use("/api/engineers", engineersRouter);
 
   return httpServer;
 }

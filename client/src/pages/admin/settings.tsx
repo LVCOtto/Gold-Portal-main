@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2, MessageSquare, PhoneCall, ShieldAlert, Wrench } from "lucide-react";
+import { HardHat, Loader2, MessageSquare, PhoneCall, ShieldAlert, Wrench } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminLayout } from "@/components/admin-layout";
 import { Switch } from "@/components/ui/switch";
@@ -24,6 +24,7 @@ type InternalAccessUser = {
   canWorkshop: boolean;
   canComms: boolean;
   canCallbacks: boolean;
+  canEngineer: boolean;
   isActive: boolean;
   lastLoginAt: string | null;
 };
@@ -35,6 +36,7 @@ type NewInternalAccessUser = {
   canWorkshop: boolean;
   canComms: boolean;
   canCallbacks: boolean;
+  canEngineer: boolean;
   isActive: boolean;
 };
 
@@ -70,6 +72,7 @@ export default function AdminSettingsPage() {
     canWorkshop: true,
     canComms: false,
     canCallbacks: false,
+    canEngineer: false,
     isActive: true,
   });
 
@@ -110,7 +113,16 @@ export default function AdminSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/internal-access"] });
-      setNewInternalAccessUser({ email: "", displayName: "", canAdmin: false, canWorkshop: true, canComms: false, canCallbacks: false, isActive: true });
+      setNewInternalAccessUser({
+        email: "",
+        displayName: "",
+        canAdmin: false,
+        canWorkshop: true,
+        canComms: false,
+        canCallbacks: false,
+        canEngineer: false,
+        isActive: true,
+      });
       toast({ title: "Internal access saved", description: "The internal user has been added or updated." });
     },
     onError: (error) => {
@@ -130,6 +142,7 @@ export default function AdminSettingsPage() {
         canWorkshop: payload.canWorkshop,
         canComms: payload.canComms,
         canCallbacks: payload.canCallbacks,
+        canEngineer: payload.canEngineer,
         isActive: payload.isActive,
       });
       return response.json() as Promise<{ user: InternalAccessUser }>;
@@ -259,7 +272,7 @@ export default function AdminSettingsPage() {
               <div className="space-y-1">
                 <p className="font-medium text-foreground">Add internal user</p>
                 <p className="text-xs text-muted-foreground">
-                  Grant one-time-code access to the Workshop portal, the Comms portal, or both. These users do not get customer portal access.
+                  Grant one-time-code access to internal portals. Engineer Hub users should have a display name that matches the engineer name in the imported master data (you can add aliases separated by |).
                 </p>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
@@ -330,6 +343,17 @@ export default function AdminSettingsPage() {
                     onCheckedChange={(checked) => setNewInternalAccessUser((current) => ({ ...current, canCallbacks: checked }))}
                   />
                 </div>
+                <div className="flex items-center justify-between gap-4 md:min-w-52">
+                  <div className="flex items-center gap-2">
+                    <HardHat className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="new-internal-engineer">Engineer Hub</Label>
+                  </div>
+                  <Switch
+                    id="new-internal-engineer"
+                    checked={newInternalAccessUser.canEngineer}
+                    onCheckedChange={(checked) => setNewInternalAccessUser((current) => ({ ...current, canEngineer: checked }))}
+                  />
+                </div>
                 <div className="flex items-center justify-between gap-4 md:min-w-44">
                   <Label htmlFor="new-internal-active">Active</Label>
                   <Switch
@@ -354,7 +378,7 @@ export default function AdminSettingsPage() {
               <div className="space-y-1">
                 <p className="font-medium text-foreground">Current internal users</p>
                 <p className="text-xs text-muted-foreground">
-                  Workshop sign-in: {workshopLoginUrl}. Comms sign-in: /comms/login. Callbacks sign-in: /callbacks/login.
+                  Workshop sign-in: {workshopLoginUrl}. Comms sign-in: /comms/login. Callbacks sign-in: /callbacks/login. Engineer Hub sign-in: /engineers/login.
                 </p>
               </div>
 
@@ -440,6 +464,17 @@ export default function AdminSettingsPage() {
                           id={`callbacks-${user.id}`}
                           checked={user.canCallbacks}
                           onCheckedChange={(checked) => updateDraft(user.id, { canCallbacks: checked })}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-4 md:min-w-52">
+                        <div className="flex items-center gap-2">
+                          <HardHat className="h-4 w-4 text-muted-foreground" />
+                          <Label htmlFor={`engineer-${user.id}`}>Engineer Hub</Label>
+                        </div>
+                        <Switch
+                          id={`engineer-${user.id}`}
+                          checked={user.canEngineer}
+                          onCheckedChange={(checked) => updateDraft(user.id, { canEngineer: checked })}
                         />
                       </div>
                       <div className="flex items-center justify-between gap-4 md:min-w-44">

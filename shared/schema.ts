@@ -223,6 +223,7 @@ export const internalAccessUsers = pgTable("internal_access_users", {
   canWorkshop: boolean("can_workshop").notNull().default(false),
   canComms: boolean("can_comms").notNull().default(false),
   canCallbacks: boolean("can_callbacks").notNull().default(false),
+  canEngineer: boolean("can_engineer").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
