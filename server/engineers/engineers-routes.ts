@@ -10,6 +10,14 @@ const router = Router();
 registerEngineerAuthRoutes(router);
 router.use(requireEngineerAuth);
 
+function toNameFilters(names: string[]) {
+  return names
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .slice(0, 10)
+    .map((name) => sql`lower(trim(${jobs.engineerName})) = lower(trim(${name}))`);
+}
+
 type EngineerCategory = "all" | "today" | "upcoming" | "overdue" | "awaiting_parts" | "unplanned" | "completed";
 
 function isCompletedStatus(status: string): boolean {
@@ -114,22 +122,40 @@ function computeSummary(items: Array<{ status: string; visitDate: Date | null; d
   return summary;
 }
 
+router.get("/engineers", async (_req, res, next) => {
+  try {
+    const rows = await db
+      .select({ engineerName: jobs.engineerName })
+      .from(jobs)
+      .where(sql`coalesce(trim(${jobs.engineerName}), '') <> ''`)
+      .groupBy(jobs.engineerName)
+      .orderBy(jobs.engineerName);
+
+    return res.json({
+      engineers: rows
+        .map((row) => row.engineerName?.trim())
+        .filter((value): value is string => !!value),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/jobs", async (req, res, next) => {
   try {
     const operator = req.session.engineerOperator!;
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50));
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const selectedEngineer = typeof req.query.engineer === "string" ? req.query.engineer.trim() : "";
     const categoryInput = typeof req.query.category === "string" ? req.query.category : "all";
     const category: EngineerCategory = ["all", "today", "upcoming", "overdue", "awaiting_parts", "unplanned", "completed"].includes(categoryInput)
       ? (categoryInput as EngineerCategory)
       : "all";
 
-    const nameFilters = operator.engineerNames
-      .map((name) => name.trim())
-      .filter(Boolean)
-      .slice(0, 10)
-      .map((name) => sql`lower(trim(${jobs.engineerName})) = lower(trim(${name}))`);
+    const canSelectEngineer = !!operator.canSelectEngineer;
+    const effectiveNames = canSelectEngineer ? (selectedEngineer ? [selectedEngineer] : []) : operator.engineerNames;
+    const nameFilters = toNameFilters(effectiveNames);
 
     if (nameFilters.length === 0) {
       return res.json({
@@ -139,6 +165,7 @@ router.get("/jobs", async (req, res, next) => {
         pageSize,
         summary: { total: 0, today: 0, upcoming: 0, overdue: 0, awaitingParts: 0, unplanned: 0, completed: 0 },
         operator,
+        selectedEngineer: selectedEngineer || null,
       });
     }
 
@@ -224,6 +251,7 @@ router.get("/jobs", async (req, res, next) => {
       summary,
       category,
       operator,
+      selectedEngineer: selectedEngineer || null,
       support: {
         email: supportEmail,
         phone: supportPhone,
@@ -237,11 +265,13 @@ router.get("/jobs", async (req, res, next) => {
 router.get("/jobs/:jobId", async (req, res, next) => {
   try {
     const operator = req.session.engineerOperator!;
-    const nameFilters = operator.engineerNames
-      .map((name) => name.trim())
-      .filter(Boolean)
-      .slice(0, 10)
-      .map((name) => sql`lower(trim(${jobs.engineerName})) = lower(trim(${name}))`);
+    const selectedEngineer = typeof req.query.engineer === "string" ? req.query.engineer.trim() : "";
+    const effectiveNames = operator.canSelectEngineer ? (selectedEngineer ? [selectedEngineer] : []) : operator.engineerNames;
+    const nameFilters = toNameFilters(effectiveNames);
+
+    if (nameFilters.length === 0) {
+      return res.status(400).json({ message: "Engineer selection is required" });
+    }
 
     const [job] = await db
       .select({

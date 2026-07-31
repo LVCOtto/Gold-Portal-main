@@ -7,6 +7,7 @@ interface EngineerOperator {
   loginAt: string;
   displayName: string;
   engineerNames: string[];
+  canSelectEngineer?: boolean;
 }
 
 interface EngineerAuthContextType {

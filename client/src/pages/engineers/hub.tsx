@@ -7,7 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useEngineerAuth } from "@/lib/engineer-auth";
 import { EngineersLayout } from "./layout";
 
 type EngineerCategory = "all" | "today" | "upcoming" | "overdue" | "awaiting_parts" | "unplanned" | "completed";
@@ -58,6 +60,11 @@ type EngineerJobsResponse = {
     email: string;
     phone: string;
   };
+  selectedEngineer?: string | null;
+};
+
+type EngineerOptionsResponse = {
+  engineers: string[];
 };
 
 function formatDate(value: string | null) {
@@ -86,19 +93,34 @@ function statusTone(category: EngineerCategory): "default" | "destructive" | "se
 }
 
 export default function EngineersHubPage() {
+  const { operator } = useEngineerAuth();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<EngineerCategory>("all");
+  const [selectedEngineer, setSelectedEngineer] = useState("");
+  const canSelectEngineer = !!operator?.canSelectEngineer;
+
+  const optionsQuery = useQuery<EngineerOptionsResponse>({
+    queryKey: ["/api/engineers/engineers"],
+    queryFn: async () => {
+      const res = await fetch("/api/engineers/engineers", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load engineer list");
+      return res.json();
+    },
+    enabled: canSelectEngineer,
+  });
 
   const query = useQuery<EngineerJobsResponse>({
-    queryKey: ["/api/engineers/jobs", search, category],
+    queryKey: ["/api/engineers/jobs", search, category, selectedEngineer],
     queryFn: async () => {
       const params = new URLSearchParams({ pageSize: "100", category });
       if (search.trim()) params.set("search", search.trim());
+      if (canSelectEngineer && selectedEngineer) params.set("engineer", selectedEngineer);
       const res = await fetch(`/api/engineers/jobs?${params.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load engineer jobs");
       return res.json();
     },
+    enabled: !canSelectEngineer || !!selectedEngineer,
   });
 
   const jobs = query.data?.jobs || [];
@@ -122,7 +144,7 @@ export default function EngineersHubPage() {
       <div className="space-y-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">My Job Management Hub</h1>
+            <h1 className="text-2xl font-semibold">{canSelectEngineer ? "Engineer Hub Preview" : "My Job Management Hub"}</h1>
             <p className="text-muted-foreground mt-1">Plan work, manage comms, and keep every assigned job moving.</p>
           </div>
           <div className="w-full max-w-xl">
@@ -143,6 +165,31 @@ export default function EngineersHubPage() {
             </form>
           </div>
         </div>
+
+        {canSelectEngineer ? (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-medium">Select engineer view</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Select value={selectedEngineer} onValueChange={setSelectedEngineer}>
+                <SelectTrigger className="max-w-md" data-testid="select-engineer-preview">
+                  <SelectValue placeholder={optionsQuery.isLoading ? "Loading engineers..." : "Choose an engineer"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(optionsQuery.data?.engineers || []).map((name) => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!selectedEngineer ? (
+                <p className="text-sm text-muted-foreground">Pick an engineer to load their hub view.</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">Showing hub as <span className="font-medium text-foreground">{selectedEngineer}</span>.</p>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           {chips.map((chip) => (
@@ -166,7 +213,9 @@ export default function EngineersHubPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {query.isLoading ? (
+            {canSelectEngineer && !selectedEngineer ? (
+              <div className="py-12 text-center text-muted-foreground">Select an engineer above to load their jobs.</div>
+            ) : query.isLoading ? (
               <div className="space-y-2">
                 {[...Array(6)].map((_, index) => (
                   <Skeleton key={index} className="h-16" />

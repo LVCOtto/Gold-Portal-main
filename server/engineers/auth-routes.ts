@@ -104,8 +104,9 @@ export function registerEngineerAuthRoutes(router: Router) {
 
       const normalized = normalizeInternalEmail(email);
       const access = await resolveInternalAccess(normalized);
+      const canUseEngineerHub = hasInternalAccess(access, "engineer") || access.canAdmin;
 
-      if (!hasInternalAccess(access, "engineer")) {
+      if (!canUseEngineerHub) {
         return res.status(403).json({ message: "That email address is not enabled for Engineer Hub access." });
       }
 
@@ -165,14 +166,17 @@ export function registerEngineerAuthRoutes(router: Router) {
       }
 
       const access = await resolveInternalAccess(pending.email);
-      if (!hasInternalAccess(access, "engineer")) {
+      const canUseEngineerHub = hasInternalAccess(access, "engineer") || access.canAdmin;
+      if (!canUseEngineerHub) {
         delete req.session.engineerOtp;
         await saveSession(req);
         return res.status(403).json({ message: "This email address is no longer allowed to access Engineer Hub" });
       }
 
       const engineerNames = parseEngineerNames(access.displayName);
-      if (engineerNames.length === 0) {
+      const canSelectEngineer = engineerNames.length === 0 && access.canAdmin;
+
+      if (engineerNames.length === 0 && !canSelectEngineer) {
         delete req.session.engineerOtp;
         await saveSession(req);
         return res.status(403).json({
@@ -185,8 +189,9 @@ export function registerEngineerAuthRoutes(router: Router) {
       req.session.engineerOperator = {
         email: pending.email,
         loginAt: new Date().toISOString(),
-        displayName: access.displayName || engineerNames[0],
+        displayName: access.displayName || "Engineer Hub Admin",
         engineerNames,
+        canSelectEngineer,
       };
 
       await saveSession(req);
@@ -197,6 +202,7 @@ export function registerEngineerAuthRoutes(router: Router) {
           email: pending.email,
           displayName: req.session.engineerOperator.displayName,
           engineerNames,
+          canSelectEngineer,
         },
       });
     } catch (err) {

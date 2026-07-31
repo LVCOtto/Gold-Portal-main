@@ -163,6 +163,7 @@ declare module "express-session" {
       loginAt: string;
       displayName: string;
       engineerNames: string[];
+      canSelectEngineer?: boolean;
     };
   }
 }
