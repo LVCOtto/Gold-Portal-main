@@ -18,16 +18,22 @@ function toNameFilters(names: string[]) {
     .map((name) => sql`lower(trim(${jobs.engineerName})) = lower(trim(${name}))`);
 }
 
-type EngineerCategory = "all" | "today" | "upcoming" | "overdue" | "awaiting_parts" | "unplanned" | "completed";
+type EngineerCategory = "available" | "planned" | "attention" | "awaiting_parts" | "completed" | "all";
+
+type CategorisableJob = {
+  status: string;
+  sourcePortalStatus: string | null;
+  visitDate: Date | null;
+};
 
 function isCompletedStatus(status: string): boolean {
   const normalized = status.trim().toLowerCase();
   return normalized.includes("complete") || normalized.includes("closed") || normalized.includes("cancelled");
 }
 
-function isAwaitingParts(status: string): boolean {
-  const normalized = status.trim().toLowerCase();
-  return normalized.includes("parts") || normalized.includes("awaiting parts");
+function isAwaitingParts(job: Pick<CategorisableJob, "status" | "sourcePortalStatus">): boolean {
+  const workflowText = `${job.status} ${job.sourcePortalStatus || ""}`.trim().toLowerCase();
+  return workflowText.includes("awaiting parts") || workflowText.includes("parts required") || workflowText.includes("parts on order");
 }
 
 function dayStart(date: Date): Date {
@@ -36,87 +42,46 @@ function dayStart(date: Date): Date {
   return value;
 }
 
-function dayEnd(date: Date): Date {
-  const value = new Date(date);
-  value.setHours(23, 59, 59, 999);
-  return value;
+function categoryForJob(job: CategorisableJob): Exclude<EngineerCategory, "all"> {
+  if (isCompletedStatus(job.status)) return "completed";
+  if (isAwaitingParts(job)) return "awaiting_parts";
+  if (job.visitDate && job.visitDate < dayStart(new Date())) return "attention";
+  if (job.visitDate) return "planned";
+  return "available";
 }
 
-function addDays(date: Date, days: number): Date {
-  const value = new Date(date);
-  value.setDate(value.getDate() + days);
-  return value;
+function sortOperationally<T extends CategorisableJob & { dueDate: Date | null; lastUpdatedDate: Date }>(items: T[], category: EngineerCategory): T[] {
+  return [...items].sort((left, right) => {
+    if (category === "planned" || category === "attention") {
+      return (left.visitDate?.getTime() || 0) - (right.visitDate?.getTime() || 0);
+    }
+    if (category === "awaiting_parts") {
+      const leftDue = left.dueDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const rightDue = right.dueDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      return leftDue - rightDue;
+    }
+    return right.lastUpdatedDate.getTime() - left.lastUpdatedDate.getTime();
+  });
 }
 
-function inDateRange(value: Date | null, from: Date, to: Date): boolean {
-  if (!value) return false;
-  return value >= from && value <= to;
-}
-
-function matchesCategory(job: { status: string; visitDate: Date | null; dueDate: Date | null }, category: EngineerCategory): boolean {
-  if (category === "all") return true;
-
-  const now = new Date();
-  const todayStart = dayStart(now);
-  const todayEnd = dayEnd(now);
-  const weekEnd = dayEnd(addDays(todayStart, 7));
-
-  const completed = isCompletedStatus(job.status);
-
-  if (category === "completed") return completed;
-  if (completed) return false;
-
-  if (category === "today") {
-    return inDateRange(job.visitDate, todayStart, todayEnd);
-  }
-
-  if (category === "upcoming") {
-    return !!job.visitDate && job.visitDate > todayEnd && job.visitDate <= weekEnd;
-  }
-
-  if (category === "overdue") {
-    return !!job.visitDate && job.visitDate < todayStart;
-  }
-
-  if (category === "awaiting_parts") {
-    return isAwaitingParts(job.status) || (!!job.dueDate && job.dueDate < now);
-  }
-
-  if (category === "unplanned") {
-    return !job.visitDate;
-  }
-
-  return true;
-}
-
-function computeSummary(items: Array<{ status: string; visitDate: Date | null; dueDate: Date | null }>) {
-  const now = new Date();
-  const todayStart = dayStart(now);
-  const todayEnd = dayEnd(now);
-  const weekEnd = dayEnd(addDays(todayStart, 7));
-
+function computeSummary(items: CategorisableJob[]) {
   const summary = {
     total: 0,
-    today: 0,
-    upcoming: 0,
-    overdue: 0,
+    available: 0,
+    planned: 0,
+    attention: 0,
     awaitingParts: 0,
-    unplanned: 0,
     completed: 0,
   };
 
   for (const item of items) {
     summary.total += 1;
-    if (isCompletedStatus(item.status)) {
-      summary.completed += 1;
-      continue;
-    }
-
-    if (inDateRange(item.visitDate, todayStart, todayEnd)) summary.today += 1;
-    if (item.visitDate && item.visitDate > todayEnd && item.visitDate <= weekEnd) summary.upcoming += 1;
-    if (item.visitDate && item.visitDate < todayStart) summary.overdue += 1;
-    if (!item.visitDate) summary.unplanned += 1;
-    if (isAwaitingParts(item.status) || (!!item.dueDate && item.dueDate < now)) summary.awaitingParts += 1;
+    const category = categoryForJob(item);
+    if (category === "available") summary.available += 1;
+    if (category === "planned") summary.planned += 1;
+    if (category === "attention") summary.attention += 1;
+    if (category === "awaiting_parts") summary.awaitingParts += 1;
+    if (category === "completed") summary.completed += 1;
   }
 
   return summary;
@@ -148,10 +113,10 @@ router.get("/jobs", async (req, res, next) => {
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50));
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const selectedEngineer = typeof req.query.engineer === "string" ? req.query.engineer.trim() : "";
-    const categoryInput = typeof req.query.category === "string" ? req.query.category : "all";
-    const category: EngineerCategory = ["all", "today", "upcoming", "overdue", "awaiting_parts", "unplanned", "completed"].includes(categoryInput)
+    const categoryInput = typeof req.query.category === "string" ? req.query.category : "available";
+    const category: EngineerCategory = ["available", "planned", "attention", "awaiting_parts", "completed", "all"].includes(categoryInput)
       ? (categoryInput as EngineerCategory)
-      : "all";
+      : "available";
 
     const canSelectEngineer = !!operator.canSelectEngineer;
     const effectiveNames = canSelectEngineer ? (selectedEngineer ? [selectedEngineer] : []) : operator.engineerNames;
@@ -163,7 +128,7 @@ router.get("/jobs", async (req, res, next) => {
         total: 0,
         page,
         pageSize,
-        summary: { total: 0, today: 0, upcoming: 0, overdue: 0, awaitingParts: 0, unplanned: 0, completed: 0 },
+        summary: { total: 0, available: 0, planned: 0, attention: 0, awaitingParts: 0, completed: 0 },
         operator,
         selectedEngineer: selectedEngineer || null,
       });
@@ -211,7 +176,8 @@ router.get("/jobs", async (req, res, next) => {
       .limit(1000);
 
     const summary = computeSummary(rows);
-    const filtered = rows.filter((row) => matchesCategory(row, category));
+    const matchingRows = category === "all" ? rows : rows.filter((row) => categoryForJob(row) === category);
+    const filtered = sortOperationally(matchingRows, category);
 
     const offset = (page - 1) * pageSize;
     const paged = filtered.slice(offset, offset + pageSize);

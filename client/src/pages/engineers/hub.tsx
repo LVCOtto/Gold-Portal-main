@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Mail, PhoneCall, CalendarClock, Search, AlertTriangle, ClipboardList, Wrench } from "lucide-react";
+import { Mail, PhoneCall, CalendarClock, Search, AlertTriangle, ClipboardList, Wrench, BriefcaseBusiness, CalendarDays, PackageOpen, CheckCircle2 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useEngineerAuth } from "@/lib/engineer-auth";
 import { EngineersLayout } from "./layout";
 
-type EngineerCategory = "all" | "today" | "upcoming" | "overdue" | "awaiting_parts" | "unplanned" | "completed";
+type EngineerCategory = "available" | "planned" | "attention" | "awaiting_parts" | "completed" | "all";
 
 type PurchaseOrderSummary = {
   poId: string;
@@ -49,11 +49,10 @@ type EngineerJobsResponse = {
   category: EngineerCategory;
   summary: {
     total: number;
-    today: number;
-    upcoming: number;
-    overdue: number;
+    available: number;
+    planned: number;
+    attention: number;
     awaitingParts: number;
-    unplanned: number;
     completed: number;
   };
   support: {
@@ -74,21 +73,20 @@ function formatDate(value: string | null) {
 
 function categoryLabel(category: EngineerCategory): string {
   const labels: Record<EngineerCategory, string> = {
-    all: "All",
-    today: "Today",
-    upcoming: "Upcoming (7 days)",
-    overdue: "Overdue",
-    awaiting_parts: "Awaiting parts",
-    unplanned: "Unplanned",
+    available: "Available Jobs",
+    planned: "Planned Work",
+    attention: "Attention Needed",
+    awaiting_parts: "Awaiting Parts",
     completed: "Completed",
+    all: "All Jobs",
   };
   return labels[category];
 }
 
 function statusTone(category: EngineerCategory): "default" | "destructive" | "secondary" | "outline" {
-  if (category === "overdue") return "destructive";
+  if (category === "attention") return "destructive";
   if (category === "awaiting_parts") return "secondary";
-  if (category === "today") return "default";
+  if (category === "available") return "default";
   return "outline";
 }
 
@@ -96,7 +94,7 @@ export default function EngineersHubPage() {
   const { operator } = useEngineerAuth();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState<EngineerCategory>("all");
+  const [category, setCategory] = useState<EngineerCategory>("available");
   const [selectedEngineer, setSelectedEngineer] = useState("");
   const canSelectEngineer = !!operator?.canSelectEngineer;
 
@@ -128,24 +126,23 @@ export default function EngineersHubPage() {
 
   const chips = useMemo(
     () => [
-      { key: "all" as EngineerCategory, label: "All", value: summary?.total || 0 },
-      { key: "today" as EngineerCategory, label: "Today", value: summary?.today || 0 },
-      { key: "upcoming" as EngineerCategory, label: "Upcoming", value: summary?.upcoming || 0 },
-      { key: "overdue" as EngineerCategory, label: "Overdue", value: summary?.overdue || 0 },
-      { key: "awaiting_parts" as EngineerCategory, label: "Awaiting parts", value: summary?.awaitingParts || 0 },
-      { key: "unplanned" as EngineerCategory, label: "Unplanned", value: summary?.unplanned || 0 },
-      { key: "completed" as EngineerCategory, label: "Completed", value: summary?.completed || 0 },
+      { key: "available" as EngineerCategory, label: "Available Jobs", value: summary?.available || 0, icon: BriefcaseBusiness },
+      { key: "planned" as EngineerCategory, label: "Planned Work", value: summary?.planned || 0, icon: CalendarDays },
+      { key: "attention" as EngineerCategory, label: "Attention Needed", value: summary?.attention || 0, icon: AlertTriangle },
+      { key: "awaiting_parts" as EngineerCategory, label: "Awaiting Parts", value: summary?.awaitingParts || 0, icon: PackageOpen },
+      { key: "completed" as EngineerCategory, label: "Completed", value: summary?.completed || 0, icon: CheckCircle2 },
+      { key: "all" as EngineerCategory, label: "All Jobs", value: summary?.total || 0, icon: ClipboardList },
     ],
     [summary],
   );
 
   return (
     <EngineersLayout>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">{canSelectEngineer ? "Engineer Hub Preview" : "My Job Management Hub"}</h1>
-            <p className="text-muted-foreground mt-1">Plan work, manage comms, and keep every assigned job moving.</p>
+            <h1 className="text-xl sm:text-2xl font-semibold">{canSelectEngineer ? "Engineer Hub Preview" : "My Job Management Hub"}</h1>
+            <p className="text-sm text-muted-foreground mt-1">Plan work, manage comms, and keep every assigned job moving.</p>
           </div>
           <div className="w-full max-w-xl">
             <form
@@ -168,12 +165,20 @@ export default function EngineersHubPage() {
 
         {canSelectEngineer ? (
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="p-4 pb-2 sm:p-6 sm:pb-3">
               <CardTitle className="text-base font-medium">Select engineer view</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <Select value={selectedEngineer} onValueChange={setSelectedEngineer}>
-                <SelectTrigger className="max-w-md" data-testid="select-engineer-preview">
+            <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6 space-y-3">
+              <Select
+                value={selectedEngineer}
+                onValueChange={(engineer) => {
+                  setSelectedEngineer(engineer);
+                  setCategory("available");
+                  setSearchInput("");
+                  setSearch("");
+                }}
+              >
+                <SelectTrigger className="w-full sm:max-w-md" data-testid="select-engineer-preview">
                   <SelectValue placeholder={optionsQuery.isLoading ? "Loading engineers..." : "Choose an engineer"} />
                 </SelectTrigger>
                 <SelectContent>
@@ -191,28 +196,31 @@ export default function EngineersHubPage() {
           </Card>
         ) : null}
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        <div className="-mx-3 px-3 sm:mx-0 sm:px-0 flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory">
           {chips.map((chip) => (
             <button
               key={chip.key}
               type="button"
-              className={`rounded-md border p-3 text-left transition-colors ${chip.key === category ? "bg-primary/10 border-primary/30" : "hover:bg-muted"}`}
+              className={`w-36 sm:w-auto sm:min-w-36 shrink-0 snap-start rounded-md border p-3 text-left transition-colors ${chip.key === category ? "bg-primary/10 border-primary/40 shadow-sm" : "bg-card hover:bg-muted"}`}
               onClick={() => setCategory(chip.key)}
             >
-              <p className="text-xs text-muted-foreground">{chip.label}</p>
-              <p className="text-xl font-semibold mt-1">{chip.value}</p>
+              <div className="flex items-center justify-between gap-2">
+                <chip.icon className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xl font-semibold">{chip.value}</span>
+              </div>
+              <p className="text-xs font-medium mt-2 whitespace-nowrap">{chip.label}</p>
             </button>
           ))}
         </div>
 
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="p-4 pb-2 sm:p-6 sm:pb-3">
             <CardTitle className="text-base font-medium flex items-center gap-2">
               <ClipboardList className="h-4 w-4" />
               {categoryLabel(category)} jobs
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
             {canSelectEngineer && !selectedEngineer ? (
               <div className="py-12 text-center text-muted-foreground">Select an engineer above to load their jobs.</div>
             ) : query.isLoading ? (
@@ -227,21 +235,24 @@ export default function EngineersHubPage() {
               <Accordion type="multiple" className="w-full">
                 {jobs.map((job) => (
                   <AccordionItem key={job.jobId} value={job.jobId}>
-                    <AccordionTrigger className="hover:no-underline">
+                    <AccordionTrigger className="py-3 sm:py-4 hover:no-underline items-start gap-2 text-left">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap pr-1">
                           <span className="font-semibold">{job.jobId}</span>
                           <Badge variant={statusTone(category)}>{job.status}</Badge>
                           {job.priority ? <Badge variant="outline">{job.priority}</Badge> : null}
-                          {job.jobType ? <Badge variant="secondary">{job.jobType}</Badge> : null}
                         </div>
-                        <p className="text-sm text-muted-foreground truncate mt-1">{job.accountName || job.accountCode} · {job.siteName}</p>
+                        <p className="text-sm font-medium mt-1.5 break-words">{job.siteName}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                          <span>{job.accountName || job.accountCode}</span>
+                          {job.visitDate ? <span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{formatDate(job.visitDate)}</span> : null}
+                        </div>
                       </div>
                     </AccordionTrigger>
                     <AccordionContent>
                       <div className="grid gap-4 lg:grid-cols-3">
                         <div className="lg:col-span-2 space-y-3">
-                          <div className="grid gap-3 sm:grid-cols-2 text-sm">
+                          <div className="grid grid-cols-2 gap-3 text-sm">
                             <div>
                               <p className="text-xs uppercase text-muted-foreground tracking-wide">Visit Date</p>
                               <p className="font-medium">{formatDate(job.visitDate)}</p>
@@ -262,6 +273,7 @@ export default function EngineersHubPage() {
 
                           <div>
                             <p className="text-xs uppercase text-muted-foreground tracking-wide mb-1">Job Details</p>
+                            {job.jobType ? <Badge variant="secondary" className="mb-2 whitespace-normal text-left">{job.jobType}</Badge> : null}
                             <p className="text-sm">{job.shortDescription || "No summary available"}</p>
                             {job.equipment ? (
                               <p className="text-xs text-muted-foreground mt-2">Equipment: {job.equipment}</p>
@@ -272,7 +284,7 @@ export default function EngineersHubPage() {
                             <div className="rounded-md border p-3 space-y-2">
                               <p className="text-xs uppercase text-muted-foreground tracking-wide">Linked Purchase Orders</p>
                               {job.purchaseOrders.map((po) => (
-                                <div key={po.poId} className="text-sm flex items-center justify-between gap-2">
+                                <div key={po.poId} className="text-sm flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
                                   <span className="font-medium">{po.poId}</span>
                                   <span className="text-muted-foreground">{po.poStatus} · ETA {formatDate(po.etaDate)}</span>
                                 </div>
