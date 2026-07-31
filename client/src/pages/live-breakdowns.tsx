@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
+import QRCode from "qrcode";
 import { ArrowLeft, Check, Copy, RefreshCw, Radio, Clock3, Wrench, MapPinned } from "lucide-react";
 import lvcLogo from "@assets/logo.png";
 import type { Job } from "@shared/schema";
@@ -64,6 +65,9 @@ export default function LiveBreakdownsPage() {
   const { toast } = useToast();
   const params = useParams<{ token?: string }>();
   const [copied, setCopied] = useState(false);
+  const [qrCopied, setQrCopied] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+  const [qrCodeSrc, setQrCodeSrc] = useState("");
   const token = params?.token;
 
   const { data, isLoading, isFetching, error, refetch } = useQuery<LiveBreakdownResponse>({
@@ -77,6 +81,47 @@ export default function LiveBreakdownsPage() {
     const timer = window.setTimeout(() => setCopied(false), 1500);
     return () => window.clearTimeout(timer);
   }, [copied]);
+
+  useEffect(() => {
+    if (!qrCopied) return;
+    const timer = window.setTimeout(() => setQrCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [qrCopied]);
+
+  useEffect(() => {
+    if (!token) {
+      setShareUrl("");
+      setQrCodeSrc("");
+      return;
+    }
+
+    const currentShareUrl = window.location.href;
+    setShareUrl(currentShareUrl);
+
+    let active = true;
+
+    void QRCode.toDataURL(currentShareUrl, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 320,
+      color: {
+        dark: "#0f172a",
+        light: "#ffffff",
+      },
+    }).then((dataUrl: string) => {
+      if (active) {
+        setQrCodeSrc(dataUrl);
+      }
+    }).catch(() => {
+      if (active) {
+        setQrCodeSrc("");
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   const summary = useMemo(() => getStatusSummary(data?.jobs || []), [data?.jobs]);
 
@@ -96,6 +141,51 @@ export default function LiveBreakdownsPage() {
         title: "Copy failed",
         description: "Your browser would not allow clipboard access.",
         variant: "destructive",
+      });
+    }
+  }
+
+  async function copyQrCode() {
+    if (!qrCodeSrc) {
+      toast({
+        title: "QR code unavailable",
+        description: "The share QR code is still being generated.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+        throw new Error("Clipboard image copy is not supported");
+      }
+
+      const response = await fetch(qrCodeSrc);
+      const blob = await response.blob();
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          [blob.type]: blob,
+        }),
+      ]);
+      setQrCopied(true);
+      toast({
+        title: "QR code copied",
+        description: "The share QR code is now on your clipboard.",
+      });
+    } catch {
+      try {
+        if (shareUrl) {
+          await navigator.clipboard.writeText(shareUrl);
+        }
+      } catch {
+        // Ignore fallback failure and show the primary error below.
+      }
+
+      toast({
+        title: "Image copy not supported",
+        description: shareUrl
+          ? "Your browser could not copy the QR image, so the share link was copied instead."
+          : "Your browser could not copy the QR image.",
       });
     }
   }
@@ -147,6 +237,46 @@ export default function LiveBreakdownsPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+        {token ? (
+          <Card className="border-slate-200/70 shadow-sm">
+            <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+              <div className="flex items-start gap-4">
+                <div className="overflow-hidden rounded-xl border bg-white p-2 shadow-sm">
+                  {qrCodeSrc ? (
+                    <img
+                      src={qrCodeSrc}
+                      alt="QR code for this live breakdown board"
+                      className="h-28 w-28 sm:h-32 sm:w-32"
+                    />
+                  ) : (
+                    <div className="flex h-28 w-28 items-center justify-center sm:h-32 sm:w-32">
+                      <Skeleton className="h-full w-full" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <h2 className="text-base font-semibold text-foreground">Share this board</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Scan or copy this QR code to open the current weekly breakdown link.
+                  </p>
+                  <p className="break-all text-xs text-muted-foreground">{shareUrl || window.location.href}</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:min-w-[11rem]">
+                <Button type="button" variant="outline" onClick={copyQrCode} data-testid="button-copy-breakdown-qr">
+                  {qrCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                  {qrCopied ? "Copied" : "Copy QR code"}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => navigator.clipboard.writeText(shareUrl || window.location.href)} data-testid="button-copy-breakdown-link">
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copy link
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <div className="grid gap-4 sm:grid-cols-3">
           <Card className="border-slate-200/70 shadow-sm">
             <CardHeader className="pb-2">
