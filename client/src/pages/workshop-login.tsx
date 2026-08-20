@@ -158,11 +158,14 @@ export default function WorkshopLoginPage() {
                           <FormLabel>Login Code</FormLabel>
                           <FormControl>
                             <Input
+                              type="text"
                               inputMode="numeric"
-                              autoComplete="one-time-code"
+                              autoComplete="off"
+                              spellCheck={false}
                               placeholder="000000"
                               maxLength={6}
                               {...field}
+                              name="workshop-otp"
                               onChange={(event) => field.onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
                               className="h-11 text-center text-lg tracking-[0.3em]"
                               data-testid="input-workshop-otp"
