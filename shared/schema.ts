@@ -668,7 +668,7 @@ export const WORKSHOP_LANE_LABELS: Record<WorkshopLane, string> = {
   on_the_bench: "On The Bench",
   quoted: "Quoted",
   awaiting_parts: "Awaiting Parts",
-  repair_completed: "Repair Completed",
+  repair_completed: "Case Completed",
 };
 
 export function isWorkshopLane(value: string): value is WorkshopLane {
@@ -677,6 +677,15 @@ export function isWorkshopLane(value: string): value is WorkshopLane {
 
 export function getDefaultWorkshopLane(rawStatus: string): WorkshopLane {
   const normalized = rawStatus.toLowerCase();
+
+  if (
+    normalized.includes("attended - in processing") ||
+    normalized.includes("requires invoicing") ||
+    normalized.includes("awaiting complete") ||
+    normalized.includes("awaiting details")
+  ) {
+    return "repair_completed";
+  }
 
   if (normalized.includes("awaiting parts") || normalized.includes("parts ordered") || normalized.includes("parts on order")) {
     return "awaiting_parts";
@@ -688,6 +697,17 @@ export function getDefaultWorkshopLane(rawStatus: string): WorkshopLane {
 
   if (normalized.includes("completed") || normalized.includes("ready for collection") || normalized.includes("collection") || normalized.includes("return to site")) {
     return "repair_completed";
+  }
+
+  if (
+    normalized.includes("attended") ||
+    normalized.includes("pending engineer visit") ||
+    normalized.includes("site attended") ||
+    normalized.includes("further work needed") ||
+    normalized.includes("further work req") ||
+    normalized.includes("waiting acceptance")
+  ) {
+    return "on_the_bench";
   }
 
   return "entry";

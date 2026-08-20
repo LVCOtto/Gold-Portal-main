@@ -2144,7 +2144,7 @@ export async function registerRoutes(
           on_the_bench: "On The Bench",
           quoted: "Quoted",
           awaiting_parts: "Awaiting Parts",
-          repair_completed: "Repair Completed",
+          repair_completed: "Case Completed",
         };
 
         const message = buildWorkshopUpdateMessage({

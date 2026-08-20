@@ -65,7 +65,7 @@ const laneConfig: Array<{ key: WorkshopLane; label: string; description: string 
   { key: "on_the_bench", label: "On The Bench", description: "Actively being assessed or repaired by the team." },
   { key: "quoted", label: "Quoted", description: "Quotation or approval point reached." },
   { key: "awaiting_parts", label: "Awaiting Parts", description: "Waiting on parts before work can continue." },
-  { key: "repair_completed", label: "Repair Completed", description: "Ready for collection, dispatch, or return to site." },
+  { key: "repair_completed", label: "Case Completed", description: "Ready for collection, dispatch, or return to site." },
 ];
 
 const laneAccentClass: Record<WorkshopLane, { stripe: string; panel: string; glow: string; badge: string }> = {
