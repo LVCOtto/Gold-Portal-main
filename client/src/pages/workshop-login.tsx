@@ -149,7 +149,7 @@ export default function WorkshopLoginPage() {
                 </Form>
               ) : (
                 <Form {...codeForm}>
-                  <form onSubmit={codeForm.handleSubmit(onCodeSubmit)} className="space-y-5">
+                  <form key="workshop-code-form" onSubmit={codeForm.handleSubmit(onCodeSubmit)} className="space-y-5" autoComplete="off">
                     <FormField
                       control={codeForm.control}
                       name="code"
@@ -158,9 +158,10 @@ export default function WorkshopLoginPage() {
                           <FormLabel>Login Code</FormLabel>
                           <FormControl>
                             <Input
+                              key="workshop-otp-input"
                               type="text"
                               inputMode="numeric"
-                              autoComplete="off"
+                              autoComplete="new-password"
                               spellCheck={false}
                               placeholder="000000"
                               maxLength={6}
