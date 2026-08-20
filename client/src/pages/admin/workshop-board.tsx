@@ -51,6 +51,7 @@ type WorkshopBoardResponseItem = {
     equipment: string | null;
   } | null;
   accountName: string | null;
+  contactEmail: string | null;
   needsClientUpdate: boolean;
 };
 
@@ -359,7 +360,7 @@ export default function WorkshopBoardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="overflow-x-auto pb-2 2xl:overflow-visible">
             <div className="grid min-w-max grid-flow-col auto-cols-[minmax(210px,1fr)] gap-3 2xl:min-w-0 2xl:grid-flow-row 2xl:grid-cols-6 2xl:auto-cols-auto">
               {laneConfig.map((lane) => {
@@ -474,7 +475,7 @@ export default function WorkshopBoardPage() {
             </div>
           </div>
 
-          <aside className="2xl:sticky 2xl:top-6 2xl:self-start">
+          <aside className="sticky top-6 self-start xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
             <Card className="overflow-hidden border-border/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(243,246,250,0.88))] shadow-[0_24px_50px_-30px_rgba(15,23,42,0.4)] dark:bg-[linear-gradient(145deg,rgba(24,29,39,0.98),rgba(14,18,26,0.98))]">
               {selectedItem && selectedTheme ? (
                 <>
@@ -495,6 +496,17 @@ export default function WorkshopBoardPage() {
                     <div className="space-y-1">
                       <div className="text-lg font-semibold">{selectedItem.accountName || selectedItem.job?.accountCode || "Unknown account"}</div>
                       <p className="text-sm text-muted-foreground">{selectedItem.job?.shortDescription || selectedItem.card.sourceJobType || "Workshop job"}</p>
+                    </div>
+
+                    <div className="rounded-xl border border-border/80 bg-muted/35 p-4">
+                      <div className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Client Contact</div>
+                      {selectedItem.contactEmail ? (
+                        <a className="mt-1 block truncate font-medium text-primary hover:underline" href={`mailto:${selectedItem.contactEmail}`}>
+                          {selectedItem.contactEmail}
+                        </a>
+                      ) : (
+                        <div className="mt-1 font-medium text-muted-foreground">No email configured</div>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap gap-2">

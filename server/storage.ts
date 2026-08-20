@@ -549,7 +549,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Workshop board
-  async getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null; accountName: string | null; needsClientUpdate: boolean }>> {
+  async getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null; accountName: string | null; contactEmail: string | null; needsClientUpdate: boolean }>> {
     const result = await db
       .select()
       .from(workshopBoardCards)
@@ -569,6 +569,7 @@ export class DatabaseStorage implements IStorage {
         card,
         job,
         accountName: row.customer_accounts?.accountName ?? null,
+        contactEmail: row.customer_accounts?.email ?? null,
         needsClientUpdate,
       };
     });
