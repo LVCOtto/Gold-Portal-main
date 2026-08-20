@@ -474,6 +474,35 @@ async function importJobsFromLiveFile(filePath: string) {
   return importJobsFromLiveData(await parseFileData(filePath), filePath);
 }
 
+export async function runLiveJobsImport() {
+  if (isImportRunning) {
+    throw new Error("A live jobs import is already running");
+  }
+
+  isImportRunning = true;
+  try {
+    if (autoImportSource === "r2") {
+      const client = createR2Client();
+      const signature = await getR2Signature(client);
+      const { data, sourceName } = await fetchR2Object(client);
+      const result = await importJobsFromLiveData(data, sourceName);
+      lastSeenSignature = signature;
+      return result;
+    }
+
+    if (!fs.existsSync(liveJobsPath)) {
+      throw new Error(`Live jobs file not found at ${liveJobsPath}`);
+    }
+
+    const stats = await fs.promises.stat(liveJobsPath);
+    const result = await importJobsFromLiveFile(liveJobsPath);
+    lastSeenSignature = `${stats.mtimeMs}:${stats.size}`;
+    return result;
+  } finally {
+    isImportRunning = false;
+  }
+}
+
 export function startLiveJobsAutoImport(log: (message: string, source?: string) => void) {
   if (!autoImportEnabled) {
     log("live jobs auto-import disabled by AUTO_IMPORT_ENABLED=false", "live-import");

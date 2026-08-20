@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { ExternalLink, Loader2, Mail, MoveRight, PackageSearch, ShieldAlert, Wrench } from "lucide-react";
+import { ExternalLink, Loader2, Mail, MoveRight, PackageSearch, RefreshCw, ShieldAlert, Wrench } from "lucide-react";
 import { AdminLayout } from "@/components/admin-layout";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -179,6 +179,27 @@ export default function WorkshopBoardPage() {
     },
   });
 
+  const resyncMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/admin/workshop-board/resync");
+      return response.json() as Promise<{ jobsImported: number; errorCount: number }>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workshop-board"] });
+      toast({
+        title: "Workshop board resynced",
+        description: `Imported ${result.jobsImported} jobs${result.errorCount ? ` with ${result.errorCount} row errors` : ""}.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Workshop resync failed",
+        description: error instanceof Error ? error.message : "Unable to resync workshop board",
+        variant: "destructive",
+      });
+    },
+  });
+
   const moveMutation = useMutation({
     mutationFn: async (input: { jobId: string; lane: WorkshopLane; laneOrder: number; note: string; sendClientUpdate: boolean }) => {
       const response = await apiRequest("POST", `/api/admin/workshop-board/${encodeURIComponent(input.jobId)}/move`, input);
@@ -288,6 +309,18 @@ export default function WorkshopBoardPage() {
               <span className="ml-2 font-semibold">{boardStats.ready}</span>
             </div>
           </div>
+          {isAdminUser ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => resyncMutation.mutate()}
+              disabled={resyncMutation.isPending}
+              data-testid="button-workshop-resync"
+            >
+              {resyncMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Resync Board
+            </Button>
+          ) : null}
         </div>
 
         <Card className="overflow-hidden border-border/80 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.95),_rgba(241,244,248,0.78)_42%,_rgba(232,236,242,0.95))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(28,34,45,0.98),_rgba(18,23,32,0.96)_42%,_rgba(10,14,21,1))]">

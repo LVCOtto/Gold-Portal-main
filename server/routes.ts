@@ -21,6 +21,7 @@ import { callbacksRouter } from "./callbacks/callbacks-routes";
 import { engineersRouter } from "./engineers/engineers-routes";
 import { hasInternalAccess, normalizeInternalEmail, resolveInternalAccess } from "./internal-access";
 import { renderBrandedOperationalEmail, WORKSHOP_UPDATE_SENDER } from "./email-branding";
+import { runLiveJobsImport } from "./live-import";
 
 const workshopJobTypeMatchers = (process.env.WORKSHOP_JOB_TYPE_MATCHES || "workshop")
   .split(",")
@@ -2063,6 +2064,20 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Workshop board fetch error:", error);
       res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/admin/workshop-board/resync", requireAuth("admin"), async (req, res) => {
+    try {
+      const result = await runLiveJobsImport();
+      await audit(req, "admin.workshop.resync", {
+        payload: result,
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("Workshop board resync error:", error);
+      const message = error instanceof Error ? error.message : "Unable to resync workshop board";
+      res.status(message.includes("already running") ? 409 : 500).json({ message });
     }
   });
 
