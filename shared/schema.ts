@@ -191,6 +191,8 @@ export const workshopBoardCards = pgTable("workshop_board_cards", {
   boardLane: text("board_lane").notNull().default("entry"),
   laneOrder: integer("lane_order").notNull().default(0),
   sourceStatusAtLastSync: text("source_status_at_last_sync"),
+  statusChangeNeedsNotification: boolean("status_change_needs_notification").notNull().default(false),
+  sourceStatusAtLastNotification: text("source_status_at_last_notification"),
   sourceJobType: text("source_job_type"),
   lastSeenInImportAt: timestamp("last_seen_in_import_at").defaultNow().notNull(),
   archivedAt: timestamp("archived_at"),
@@ -689,6 +691,12 @@ export function getDefaultWorkshopLane(rawStatus: string): WorkshopLane {
   }
 
   return "entry";
+}
+
+export function shouldHighlightWorkshopStatusDrift(input: {
+  statusChangeNeedsNotification: boolean;
+}): boolean {
+  return input.statusChangeNeedsNotification;
 }
 
 // Status Mapping

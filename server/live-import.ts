@@ -312,9 +312,9 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
       const internalStatus = getCol(row, "Status", "status");
       const displayStatus = portalStatus || internalStatus;
       const jobType = getCol(row, "Job Type", "job_type", "JobType");
-      const equipment = getCol(row, "Equipment", "equipment");
+      const equipment = getCol(row, "Equipment 1", "Equipment1", "Equipment", "equipment", "equipment_1", "equipment1");
       const engineerName = getCol(row, "Allocated Engineer", "engineer_name", "Employee", "Engineer");
-        const inferredEta = getCol(row, "Inferred ETA", "inferred_eta", "ETA", "Eta", "ETA Date", "eta_date");
+      const inferredEta = getCol(row, "Inferred ETA", "inferred_eta", "ETA", "Eta", "ETA Date", "eta_date");
       const statusText = displayStatus ? String(displayStatus).toLowerCase() : "";
       const visitDate = parseFlexibleDate(getCol(row, "Visit Date", "visit_date", "VisitDate", "Scheduled Date", "Engineer Visit Date"));
       const partsDue = getCol(row, "Parts Due", "parts_due", "due_date", "Due", "DueDate", "Parts ETA", "Parts ETA Date");

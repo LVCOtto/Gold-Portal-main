@@ -2168,6 +2168,8 @@ export async function registerRoutes(
             ...card,
             lastEmailSentAt: new Date(),
             lastEmailOutcome: emailResult.demoMode ? `demo:${emailResult.recipient}` : `sent:${emailResult.recipient}`,
+            statusChangeNeedsNotification: emailResult.demoMode ? card.statusChangeNeedsNotification : false,
+            sourceStatusAtLastNotification: emailResult.demoMode ? card.sourceStatusAtLastNotification : boardItem.job.status,
           });
 
           await storage.createWorkshopBoardEvent({

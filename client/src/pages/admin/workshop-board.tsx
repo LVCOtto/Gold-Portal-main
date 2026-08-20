@@ -29,11 +29,14 @@ type WorkshopBoardResponseItem = {
     boardLane: WorkshopLane;
     laneOrder: number;
     sourceStatusAtLastSync: string | null;
+    statusChangeNeedsNotification: boolean;
+    sourceStatusAtLastNotification: string | null;
     sourceJobType: string | null;
     lastEmailSentAt: string | null;
     lastEmailOutcome: string | null;
     partsEtaOverride: string | null;
     updatedAt: string;
+    lastSeenInImportAt: string | null;
   };
   job: {
     jobId: string;
@@ -48,6 +51,7 @@ type WorkshopBoardResponseItem = {
     equipment: string | null;
   } | null;
   accountName: string | null;
+  needsClientUpdate: boolean;
 };
 
 type PendingMove = {
@@ -375,6 +379,7 @@ export default function WorkshopBoardPage() {
                         items.map((item, index) => {
                           const isSelected = selectedJobId === item.card.jobId;
                           const theme = getCardTheme(item);
+                          const needsClientUpdate = item.needsClientUpdate;
                           return (
                             <button
                               key={item.card.jobId}
@@ -384,11 +389,12 @@ export default function WorkshopBoardPage() {
                               onDragStart={() => setDraggedJobId(item.card.jobId)}
                               onDragEnd={() => setDraggedJobId(null)}
                               className={cn(
-                                "group relative block h-[72px] w-full overflow-hidden rounded-[16px] border text-left transition-all duration-200 ease-out focus:outline-none focus:ring-2 focus:ring-primary/50",
+                                "group relative block h-[92px] w-full overflow-hidden rounded-[16px] border text-left transition-all duration-200 ease-out focus:outline-none focus:ring-2 focus:ring-primary/50",
                                 theme.shell,
                                 "-mt-10 cursor-pointer hover:-translate-y-1 hover:shadow-[0_18px_32px_-24px_rgba(0,0,0,0.45)]",
                                 index === 0 && "mt-0",
                                 isSelected && "translate-y-1 ring-2 ring-white/70 shadow-[0_22px_40px_-24px_rgba(0,0,0,0.45)] dark:ring-white/30",
+                                needsClientUpdate && "border-amber-400 ring-2 ring-amber-300/80 dark:border-amber-500 dark:ring-amber-500/50",
                               )}
                               style={{ zIndex: isSelected ? 30 : items.length - index }}
                               data-testid={`card-workshop-${item.card.jobId}`}
@@ -396,9 +402,13 @@ export default function WorkshopBoardPage() {
                               <div className={cn("border-b px-3 py-2.5", theme.tab)}>
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
-                                    <div className="text-[0.7rem] uppercase tracking-[0.2em] opacity-70">Job</div>
+                                    <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.2em] opacity-70">
+                                      <span>Job</span>
+                                      {needsClientUpdate ? <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.15em] text-amber-900">Update</span> : null}
+                                    </div>
                                     <div className="truncate text-[0.95rem] font-semibold leading-tight">{item.card.jobId}</div>
                                     <div className="truncate text-[0.78rem] leading-tight opacity-85">{item.job?.siteName || "Job not in live import"}</div>
+                                    <div className="truncate text-[0.72rem] leading-tight opacity-80">{item.job?.equipment || "No equipment"}</div>
                                   </div>
                                   {isAdminUser && item.job ? (
                                     <a

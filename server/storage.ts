@@ -14,6 +14,7 @@ import {
   type SystemSetting,
   type WorkshopLane,
   getDefaultWorkshopLane,
+  shouldHighlightWorkshopStatusDrift,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, ilike, desc, asc, sql, gte, isNull, inArray, not } from "drizzle-orm";
@@ -548,7 +549,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Workshop board
-  async getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null; accountName: string | null }>> {
+  async getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null; accountName: string | null; needsClientUpdate: boolean }>> {
     const result = await db
       .select()
       .from(workshopBoardCards)
@@ -557,11 +558,20 @@ export class DatabaseStorage implements IStorage {
       .where(isNull(workshopBoardCards.archivedAt))
       .orderBy(asc(workshopBoardCards.boardLane), asc(workshopBoardCards.laneOrder), asc(workshopBoardCards.updatedAt));
 
-    return result.map((row) => ({
-      card: row.workshop_board_cards,
-      job: row.jobs ?? null,
-      accountName: row.customer_accounts?.accountName ?? null,
-    }));
+    return result.map((row) => {
+      const card = row.workshop_board_cards;
+      const job = row.jobs ?? null;
+      const needsClientUpdate = shouldHighlightWorkshopStatusDrift({
+        statusChangeNeedsNotification: card.statusChangeNeedsNotification,
+      });
+
+      return {
+        card,
+        job,
+        accountName: row.customer_accounts?.accountName ?? null,
+        needsClientUpdate,
+      };
+    });
   }
 
   async getWorkshopBoardEvents(jobId: string): Promise<WorkshopBoardEvent[]> {
@@ -585,6 +595,8 @@ export class DatabaseStorage implements IStorage {
           boardLane: getDefaultWorkshopLane(job.status),
           laneOrder: 0,
           sourceStatusAtLastSync: job.status,
+          statusChangeNeedsNotification: false,
+          sourceStatusAtLastNotification: null,
           sourceJobType: job.jobType,
           lastSeenInImportAt: now,
           archivedAt: null,
@@ -604,7 +616,13 @@ export class DatabaseStorage implements IStorage {
 
       await db.update(workshopBoardCards)
         .set({
+          boardLane: existingCard.sourceStatusAtLastSync !== null && existingCard.sourceStatusAtLastSync !== job.status
+            ? getDefaultWorkshopLane(job.status)
+            : existingCard.boardLane,
           sourceStatusAtLastSync: job.status,
+          statusChangeNeedsNotification: existingCard.statusChangeNeedsNotification || (
+            existingCard.sourceStatusAtLastSync !== null && existingCard.sourceStatusAtLastSync !== job.status
+          ),
           sourceJobType: job.jobType,
           lastSeenInImportAt: now,
           archivedAt: null,
@@ -695,6 +713,8 @@ export class DatabaseStorage implements IStorage {
           movedAt: card.movedAt,
           lastEmailSentAt: card.lastEmailSentAt,
           lastEmailOutcome: card.lastEmailOutcome,
+          statusChangeNeedsNotification: card.statusChangeNeedsNotification,
+          sourceStatusAtLastNotification: card.sourceStatusAtLastNotification,
           partsEtaOverride: card.partsEtaOverride,
           internalNotes: card.internalNotes,
           updatedAt: now,
