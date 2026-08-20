@@ -475,7 +475,7 @@ export default function WorkshopBoardPage() {
             </div>
           </div>
 
-          <aside className="sticky top-6 self-start xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
+          <aside className="self-start">
             <Card className="overflow-hidden border-border/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(243,246,250,0.88))] shadow-[0_24px_50px_-30px_rgba(15,23,42,0.4)] dark:bg-[linear-gradient(145deg,rgba(24,29,39,0.98),rgba(14,18,26,0.98))]">
               {selectedItem && selectedTheme ? (
                 <>
