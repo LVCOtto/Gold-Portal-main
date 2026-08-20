@@ -87,7 +87,7 @@ export interface IStorage {
   // Workshop board
   getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null; accountName: string | null }>>;
   getWorkshopBoardEvents(jobId: string): Promise<WorkshopBoardEvent[]>;
-  syncWorkshopBoard(jobSummaries: Array<{ jobId: string; status: string; jobType: string | null; isWorkshop: boolean }>): Promise<void>;
+  syncWorkshopBoard(jobSummaries: Array<{ jobId: string; status: string; jobType: string | null; isWorkshop: boolean }>, options?: { forceLaneResync?: boolean }): Promise<void>;
   moveWorkshopBoardCard(input: { jobId: string; toLane: WorkshopLane; laneOrder?: number; actor: string; payload?: string | null }): Promise<WorkshopBoardCard>;
   updateWorkshopBoardCard(card: InsertWorkshopBoardCard): Promise<WorkshopBoardCard>;
   createWorkshopBoardEvent(event: InsertWorkshopBoardEvent): Promise<WorkshopBoardEvent>;
@@ -580,7 +580,10 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(workshopBoardEvents.createdAt));
   }
 
-  async syncWorkshopBoard(jobSummaries: Array<{ jobId: string; status: string; jobType: string | null; isWorkshop: boolean }>): Promise<void> {
+  async syncWorkshopBoard(
+    jobSummaries: Array<{ jobId: string; status: string; jobType: string | null; isWorkshop: boolean }>,
+    options: { forceLaneResync?: boolean } = {},
+  ): Promise<void> {
     const now = new Date();
     const workshopJobs = jobSummaries.filter((job) => job.isWorkshop);
     const workshopJobIds = workshopJobs.map((job) => job.jobId);
@@ -616,7 +619,7 @@ export class DatabaseStorage implements IStorage {
 
       await db.update(workshopBoardCards)
         .set({
-          boardLane: existingCard.sourceStatusAtLastSync !== null && existingCard.sourceStatusAtLastSync !== job.status
+          boardLane: options.forceLaneResync || existingCard.sourceStatusAtLastSync !== null && existingCard.sourceStatusAtLastSync !== job.status
             ? getDefaultWorkshopLane(job.status)
             : existingCard.boardLane,
           sourceStatusAtLastSync: job.status,

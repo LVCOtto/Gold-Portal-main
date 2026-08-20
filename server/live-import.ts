@@ -261,7 +261,7 @@ async function getR2Signature(client: S3Client): Promise<string> {
   return `${head.ETag || "no-etag"}:${head.LastModified?.getTime() || "no-mtime"}:${head.ContentLength || 0}`;
 }
 
-async function importJobsFromLiveData(data: Record<string, unknown>[], sourceName: string) {
+async function importJobsFromLiveData(data: Record<string, unknown>[], sourceName: string, forceLaneResync = false) {
 
   if (data.length === 0) {
     throw new Error("No data rows found in live import file");
@@ -448,6 +448,7 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
       jobType: job.jobType ?? null,
       isWorkshop: job.isWorkshop ?? false,
     })),
+    { forceLaneResync },
   );
 
   await storage.setSystemSetting("last_import", new Date().toISOString());
@@ -485,7 +486,7 @@ export async function runLiveJobsImport() {
       const client = createR2Client();
       const signature = await getR2Signature(client);
       const { data, sourceName } = await fetchR2Object(client);
-      const result = await importJobsFromLiveData(data, sourceName);
+      const result = await importJobsFromLiveData(data, sourceName, true);
       lastSeenSignature = signature;
       return result;
     }
