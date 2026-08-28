@@ -471,8 +471,8 @@ async function importJobsFromLiveData(data: Record<string, unknown>[], sourceNam
   };
 }
 
-async function importJobsFromLiveFile(filePath: string) {
-  return importJobsFromLiveData(await parseFileData(filePath), filePath);
+async function importJobsFromLiveFile(filePath: string, forceLaneResync = false) {
+  return importJobsFromLiveData(await parseFileData(filePath), filePath, forceLaneResync);
 }
 
 export async function runLiveJobsImport() {
@@ -496,7 +496,7 @@ export async function runLiveJobsImport() {
     }
 
     const stats = await fs.promises.stat(liveJobsPath);
-    const result = await importJobsFromLiveFile(liveJobsPath);
+    const result = await importJobsFromLiveFile(liveJobsPath, true);
     lastSeenSignature = `${stats.mtimeMs}:${stats.size}`;
     return result;
   } finally {

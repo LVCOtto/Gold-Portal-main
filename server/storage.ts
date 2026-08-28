@@ -14,6 +14,7 @@ import {
   type SystemSetting,
   type WorkshopLane,
   getDefaultWorkshopLane,
+  shouldAutoMoveWorkshopCard,
   shouldHighlightWorkshopStatusDrift,
 } from "@shared/schema";
 import { db } from "./db";
@@ -85,7 +86,7 @@ export interface IStorage {
   deleteJobOverride(jobId: string): Promise<void>;
 
   // Workshop board
-  getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null; accountName: string | null }>>;
+  getWorkshopBoard(): Promise<Array<{ card: WorkshopBoardCard; job: Job | null; accountName: string | null; contactEmail: string | null; needsClientUpdate: boolean }>>;
   getWorkshopBoardEvents(jobId: string): Promise<WorkshopBoardEvent[]>;
   syncWorkshopBoard(jobSummaries: Array<{ jobId: string; status: string; jobType: string | null; isWorkshop: boolean }>, options?: { forceLaneResync?: boolean }): Promise<void>;
   moveWorkshopBoardCard(input: { jobId: string; toLane: WorkshopLane; laneOrder?: number; actor: string; payload?: string | null }): Promise<WorkshopBoardCard>;
@@ -618,21 +619,29 @@ export class DatabaseStorage implements IStorage {
         continue;
       }
 
+      const sourceStatusChanged = existingCard.sourceStatusAtLastSync !== null && existingCard.sourceStatusAtLastSync !== job.status;
+      const shouldAutoMove = shouldAutoMoveWorkshopCard({
+        hasManualMove: existingCard.movedAt !== null,
+        sourceStatusChanged,
+        forceLaneResync: options.forceLaneResync === true,
+      });
+
       await db.update(workshopBoardCards)
         .set({
-          boardLane: options.forceLaneResync || existingCard.sourceStatusAtLastSync !== null && existingCard.sourceStatusAtLastSync !== job.status
-            ? getDefaultWorkshopLane(job.status)
-            : existingCard.boardLane,
           sourceStatusAtLastSync: job.status,
-          statusChangeNeedsNotification: existingCard.statusChangeNeedsNotification || (
-            existingCard.sourceStatusAtLastSync !== null && existingCard.sourceStatusAtLastSync !== job.status
-          ),
+          ...(sourceStatusChanged ? { statusChangeNeedsNotification: true } : {}),
           sourceJobType: job.jobType,
           lastSeenInImportAt: now,
           archivedAt: null,
           updatedAt: now,
         })
         .where(eq(workshopBoardCards.jobId, job.jobId));
+
+      if (shouldAutoMove) {
+        await db.update(workshopBoardCards)
+          .set({ boardLane: getDefaultWorkshopLane(job.status), updatedAt: now })
+          .where(and(eq(workshopBoardCards.jobId, job.jobId), isNull(workshopBoardCards.movedAt)));
+      }
     }
 
     if (workshopJobIds.length > 0) {

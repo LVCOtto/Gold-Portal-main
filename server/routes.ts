@@ -2146,7 +2146,7 @@ export async function registerRoutes(
         jobId: req.params.jobId,
         toLane: lane,
         laneOrder: Number.isFinite(Number(laneOrder)) ? Number(laneOrder) : 0,
-        actor: req.session.user?.type === "admin" ? (req.session.user.email || "admin") : "admin",
+        actor: req.session.user?.email || req.session.user?.type || "unknown",
         payload: JSON.stringify({ note: note || null, sendClientUpdate: !!sendClientUpdate }),
       });
 

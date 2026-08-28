@@ -29,7 +29,7 @@ export function WorkshopLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl p-6">
+      <main className="mx-auto max-w-[1800px] p-6">
         {children}
       </main>
     </div>

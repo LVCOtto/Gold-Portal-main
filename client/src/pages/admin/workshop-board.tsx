@@ -61,8 +61,7 @@ type PendingMove = {
 };
 
 const laneConfig: Array<{ key: WorkshopLane; label: string; description: string }> = [
-  { key: "entry", label: "Entry", description: "Created in system, not yet fully processed into workshop flow." },
-  { key: "booked_in", label: "Booked In", description: "Arrived and acknowledged by the workshop team." },
+  { key: "entry", label: "Entry", description: "New and booked-in workshop jobs." },
   { key: "on_the_bench", label: "On The Bench", description: "Actively being assessed or repaired by the team." },
   { key: "quoted", label: "Quoted", description: "Quotation or approval point reached." },
   { key: "awaiting_parts", label: "Awaiting Parts", description: "Waiting on parts before work can continue." },
@@ -146,6 +145,10 @@ function formatDate(value: string | null | undefined): string | null {
   return format(date, "d MMM yyyy");
 }
 
+function getVisibleLane(lane: WorkshopLane): WorkshopLane {
+  return lane === "booked_in" ? "entry" : lane;
+}
+
 export default function WorkshopBoardPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -160,6 +163,7 @@ export default function WorkshopBoardPage() {
   });
   const { data: board, isLoading: boardLoading } = useQuery<WorkshopBoardResponseItem[]>({
     queryKey: ["/api/admin/workshop-board"],
+    refetchInterval: 15_000,
   });
 
   const toggleDemoModeMutation = useMutation({
@@ -244,7 +248,7 @@ export default function WorkshopBoardPage() {
     }
 
     for (const item of board || []) {
-      const lane = item.card.boardLane;
+      const lane = getVisibleLane(item.card.boardLane);
       grouped.get(lane)?.push(item);
     }
 
@@ -274,12 +278,12 @@ export default function WorkshopBoardPage() {
     return (board || []).find((item) => item.card.jobId === selectedJobId) || null;
   }, [board, selectedJobId]);
 
-  const selectedLane = selectedItem ? laneConfig.find((lane) => lane.key === selectedItem.card.boardLane) || null : null;
+  const selectedLane = selectedItem ? laneConfig.find((lane) => lane.key === getVisibleLane(selectedItem.card.boardLane)) || null : null;
   const selectedTheme = selectedItem ? getCardTheme(selectedItem) : null;
   const selectedPartsEta = selectedItem ? formatDate(selectedItem.card.partsEtaOverride || selectedItem.job?.dueDate || null) : null;
 
   function openMoveDialog(item: WorkshopBoardResponseItem, lane: WorkshopLane) {
-    if (item.card.boardLane === lane) {
+    if (getVisibleLane(item.card.boardLane) === lane) {
       return;
     }
 
@@ -360,9 +364,9 @@ export default function WorkshopBoardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="overflow-x-auto pb-2 2xl:overflow-visible">
-            <div className="grid min-w-max grid-flow-col auto-cols-[minmax(210px,1fr)] gap-3 2xl:min-w-0 2xl:grid-flow-row 2xl:grid-cols-6 2xl:auto-cols-auto">
+            <div className="grid min-w-max grid-flow-col auto-cols-[minmax(240px,1fr)] gap-4 2xl:min-w-0 2xl:grid-flow-row 2xl:grid-cols-5 2xl:auto-cols-auto">
               {laneConfig.map((lane) => {
                 const items = boardByLane.get(lane.key) || [];
                 const accent = laneAccentClass[lane.key];
@@ -475,8 +479,8 @@ export default function WorkshopBoardPage() {
             </div>
           </div>
 
-          <aside className="self-start">
-            <Card className="overflow-hidden border-border/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(243,246,250,0.88))] shadow-[0_24px_50px_-30px_rgba(15,23,42,0.4)] dark:bg-[linear-gradient(145deg,rgba(24,29,39,0.98),rgba(14,18,26,0.98))]">
+          <aside className="self-start xl:w-[340px]">
+            <Card className="overflow-hidden border-border/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(243,246,250,0.88))] shadow-[0_24px_50px_-30px_rgba(15,23,42,0.4)] dark:bg-[linear-gradient(145deg,rgba(24,29,39,0.98),rgba(14,18,26,0.98))] xl:fixed xl:bottom-6 xl:right-6 xl:top-20 xl:z-30 xl:w-[340px] xl:overflow-y-auto">
               {selectedItem && selectedTheme ? (
                 <>
                   <div className={cn("border-b px-5 py-5", selectedTheme.tab)}>
@@ -559,7 +563,7 @@ export default function WorkshopBoardPage() {
                     ) : null}
 
                     <div className="grid gap-2">
-                      {laneConfig.filter((targetLane) => targetLane.key !== selectedItem.card.boardLane).map((targetLane) => (
+                      {laneConfig.filter((targetLane) => targetLane.key !== getVisibleLane(selectedItem.card.boardLane)).map((targetLane) => (
                         <Button
                           key={targetLane.key}
                           type="button"

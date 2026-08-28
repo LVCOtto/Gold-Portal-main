@@ -679,6 +679,7 @@ export function getDefaultWorkshopLane(rawStatus: string): WorkshopLane {
   const normalized = rawStatus.toLowerCase();
 
   if (
+    normalized.includes("site attended") ||
     normalized.includes("attended - in processing") ||
     normalized.includes("requires invoicing") ||
     normalized.includes("awaiting complete") ||
@@ -711,6 +712,14 @@ export function getDefaultWorkshopLane(rawStatus: string): WorkshopLane {
   }
 
   return "entry";
+}
+
+export function shouldAutoMoveWorkshopCard(input: {
+  hasManualMove: boolean;
+  sourceStatusChanged: boolean;
+  forceLaneResync: boolean;
+}): boolean {
+  return !input.hasManualMove && (input.sourceStatusChanged || input.forceLaneResync);
 }
 
 export function shouldHighlightWorkshopStatusDrift(input: {
