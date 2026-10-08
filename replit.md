@@ -81,6 +81,15 @@ Preferred communication style: Simple, everyday language.
 - **Display Status**: Override the system status shown to customers
 - **Override Persistence**: Overrides persist through data imports (imports don't touch override records)
 
+### Workshop Board Age Flags
+- Both admin and workshop boards show the actual **days on board** on each T-card and in its detail panel.
+- Age uses the existing board card's `createdAt` (first added), not the imported job creation date. Moving, resyncing, or restoring an archived card does not reset this timestamp.
+- Calendar days are measured in `Europe/London`: neutral below 30 days, pale red at 30-59, stronger red at 60-89, and deep red at 90+.
+- Age badges and narrow accent strips preserve yellow customer/blue internal card colours and amber client-update highlights. Flags also apply in Case Completed.
+- Missing, invalid or future first-added dates show **Age unavailable**. The display refreshes every 30 seconds and on window focus.
+- This is board age, not original job age; changing to job-raised dates later requires a reliable source date.
+- Focused checks: `npx tsx --test client/src/lib/workshop-age.test.ts`.
+
 ### Upcoming Date Feature
 - **Unified Date Display**: Jobs show an "Upcoming Date" combining two source fields
 - **Parts Due** (`Parts Due` CSV column): Expected parts arrival date (used for "Awaiting Parts" jobs)
