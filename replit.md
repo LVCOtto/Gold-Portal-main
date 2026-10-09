@@ -183,6 +183,11 @@ shared/
 - `RESEND_FROM` or `EMAIL_FROM`: Verified Resend sender address for admin OTP emails
 - `RESEND_REPLY_TO`: Optional reply-to address for admin OTP emails
 - `PUBLIC_APP_URL`: Public portal URL used in OTP emails
+- `LIVE_BREAKDOWNS_WEEKLY_EMAIL_ENABLED`: Weekly live breakdown link email is enabled by default in production; set to `false` to disable or `true` to opt in outside production
+- `LIVE_BREAKDOWNS_WEEKLY_EMAIL_TO`: Weekly link recipient; defaults to `otto@lvcuk.com`
+- Weekly breakdown emails use `RESEND_API_KEY`, `RESEND_FROM`/`EMAIL_FROM`, and optional `RESEND_REPLY_TO`. Set `PUBLIC_APP_URL` to the public HTTPS portal URL; `RAILWAY_PUBLIC_DOMAIN` is used as a fallback. Missing/invalid configuration is logged and the email worker does not start.
+- The weekly link changes at Saturday 00:00 in the server timezone. The email worker checks every 60 seconds, sends the current week's full link on startup if not already sent, and retries failures on the next check. Successful sends are recorded in `system_settings`; a PostgreSQL advisory lock prevents concurrent sends by replicas, and a Resend idempotency key protects retries after an ambiguous delivery or a failed database write. No schema migration is required.
+- The live breakdown board shows a dash instead of the engineer's name for visits dated before today, using the existing overdue-date check in the viewer's timezone. This applies to desktop and mobile layouts; visits today, future visits, and jobs without a valid visit date retain their normal engineer display. Stored engineer assignments and other job views are unchanged.
 - `ADMIN_ALLOWED_IPS`: Comma-separated list of allowed IPs for admin login (optional, use `*` to allow all)
 - `AUTO_IMPORT_ENABLED`: Set to `false` in cloud deployments without local file system access
 - `AUTO_IMPORT_SOURCE`: Set to `r2` to import jobs from a Cloudflare R2/S3-compatible object instead of a local path

@@ -366,7 +366,7 @@ export default function LiveBreakdownsPage() {
                             <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap">
                               <StatusBadge status={job.status} />
                             </td>
-                            <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{job.engineerName || "—"}</td>
+                            <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap text-muted-foreground">{overdue ? "—" : job.engineerName || "—"}</td>
                             <td className="px-3 py-3 sm:px-6 sm:py-4 whitespace-nowrap">
                               <Button
                                 type="button"
@@ -420,7 +420,7 @@ export default function LiveBreakdownsPage() {
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-medium text-foreground">Engineer</span>
-                            <span>{job.engineerName || "—"}</span>
+                            <span>{overdue ? "—" : job.engineerName || "—"}</span>
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-medium text-foreground">Visit date</span>

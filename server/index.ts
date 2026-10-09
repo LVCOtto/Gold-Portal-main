@@ -6,6 +6,8 @@ import { createServer } from "http";
 import { startLiveJobsAutoImport } from "./live-import";
 import { startCommsAutoImport } from "./comms/import-worker";
 import { startCommsQueueWorker } from "./comms/queue-worker";
+import { pool } from "./db";
+import { startLiveBreakdownsWeeklyEmail } from "./live-breakdowns-email";
 
 const app = express();
 const httpServer = createServer(app);
@@ -164,6 +166,7 @@ app.use((req, res, next) => {
   startLiveJobsAutoImport(log);
   startCommsAutoImport();
   startCommsQueueWorker();
+  startLiveBreakdownsWeeklyEmail(pool, log);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
